@@ -6,20 +6,23 @@
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "TkfmRunWithRecovery",
-                "custom_action_param": {
-                    "entry": "DailyTrainingStartAttempt",
-                    "label": "调教"
-                }
+                "custom_action": "DailyTrainingInitialize",
+                "custom_action_param": {}
             }
-        }
+        },
+        "next": [
+            "DailyTrainingRun"
+        ]
     },
     "DailyTrainingStartAttempt": {
         "next": [
             "[JumpBack]CommonWaitLoading",
-            "[JumpBack]CommonCloseMainGift",
+            "DailyTrainingCloseEnergyPrompt",
+            "DailyTrainingCloseShortagePopup",
             "DailyTrainingCloseStoryPrompt",
             "DailyTrainingCloseLimitPrompt",
+            "DailyTrainingResumeDetail",
+            "[JumpBack]CommonCloseMainGift",
             "DailyTrainingOpenFromMain",
             "[JumpBack]CommonEnsureMain"
         ],
@@ -27,38 +30,36 @@
     },
     "DailyTrainingOpenFromMain": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "roi": [
-                    570,
-                    1000,
-                    120,
-                    110
+                "template": [
+                    "DailyTraining/MainEntry720.png"
                 ],
-                "expected": [
-                    "调教"
-                ]
+                "roi": [
+                    575,
+                    1015,
+                    125,
+                    95
+                ],
+                "threshold": 0.8
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": true
+                "custom_action": "ClickRecognitionCenter",
+                "custom_action_param": {}
             }
-        },
-        "post_wait_freezes": {
-            "time": 700,
-            "target": [
-                0,
-                0,
-                0,
-                0
-            ]
         },
         "next": [
             "DailyTrainingOpenFilter"
         ],
-        "pre_wait_freezes": 300
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": true
+        },
+        "max_hit": 3
     },
     "DailyTrainingOpenFilter": {
         "recognition": {
@@ -97,7 +98,11 @@
         "next": [
             "DailyTrainingFilterPanelTop"
         ],
-        "pre_wait_freezes": 300,
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": true
+        },
         "timeout": 8000
     },
     "DailyTrainingFilterPanelTop": {
@@ -126,22 +131,17 @@
                     357,
                     500
                 ],
-                "duration": 1600
+                "duration": 650
             }
-        },
-        "post_wait_freezes": {
-            "time": 700,
-            "target": [
-                0,
-                0,
-                0,
-                0
-            ]
         },
         "next": [
             "DailyTrainingSetProgressFilter"
         ],
-        "pre_wait_freezes": 300
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": true
+        }
     },
     "DailyTrainingSetProgressFilter": {
         "next": [
@@ -177,7 +177,11 @@
             "DailyTrainingEnterNextRoom",
             "DailyTrainingReturnMainFromRoomList"
         ],
-        "pre_wait_freezes": 300
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": true
+        }
     },
     "__DailyTrainingProgressLabel": {
         "recognition": {
@@ -227,28 +231,18 @@
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": true,
-                "target_offset": [
-                    468,
-                    0,
-                    -80,
-                    0
-                ]
+                "custom_action": "DailyTrainingFilterArrow",
+                "custom_action_param": {}
             }
         },
-        "post_wait_freezes": {
-            "time": 500,
-            "target": [
-                0,
-                0,
-                0,
-                0
-            ]
-        },
         "max_hit": 4,
-        "pre_wait_freezes": 300
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": true
+        }
     },
     "DailyTrainingSwipeFilterToProgress": {
         "recognition": {
@@ -265,45 +259,32 @@
                     357,
                     500
                 ],
-                "duration": 1600
+                "duration": 650
             }
-        },
-        "post_wait_freezes": {
-            "time": 700,
-            "target": [
-                0,
-                0,
-                0,
-                0
-            ]
         },
         "max_hit": 2
     },
     "DailyTrainingEnterNextRoom": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "NEXT"
+                "template": [
+                    "DailyTraining/NextRoom720.png"
                 ],
                 "roi": [
-                    90,
-                    80,
-                    560,
-                    560
-                ]
+                    100,
+                    95,
+                    530,
+                    530
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": true,
-                "target_offset": [
-                    170,
-                    50,
-                    0,
-                    0
-                ]
+                "custom_action": "DailyTrainingEnterRoom",
+                "custom_action_param": {}
             }
         },
         "next": [
@@ -312,110 +293,75 @@
         "on_error": [
             "DailyTrainingReturnMainFromRoomList"
         ],
-        "pre_wait_freezes": 300
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": true
+        },
+        "max_hit": 6
     },
     "DailyTrainingSelectConfiguredItem": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "调教道具"
+                "template": [
+                    "DailyTraining/DetailTitle720.png"
                 ],
                 "roi": [
-                    110,
+                    105,
                     930,
-                    180,
-                    65
-                ]
+                    210,
+                    80
+                ],
+                "threshold": 0.8
             }
         },
         "next": [
-            "DailyTrainingSelectCommonTab"
+            "DailyTrainingRouter"
         ],
         "on_error": [
             "DailyTrainingReturnRoomListFromDetailFallback"
         ]
     },
     "DailyTrainingClickCenterSlow": {
-        "recognition": {
-            "type": "OCR",
-            "param": {
-                "expected": [
-                    "调教道具"
-                ],
-                "roi": [
-                    110,
-                    930,
-                    180,
-                    65
-                ]
-            }
-        },
-        "action": {
-            "type": "Click",
-            "param": {
-                "target": [
-                    360,
-                    640
-                ]
-            }
-        },
-        "next": [
-            "[JumpBack]CommonWaitLoading",
-            "DailyTrainingCloseStoryPrompt",
-            "DailyTrainingCloseLimitPrompt",
-            "DailyTrainingCloseEnergyPrompt",
-            "DailyTrainingCloseShortagePopup",
-            "CommonStopOnMain",
-            "DailyTrainingClickCenterSlow",
-            "DailyTrainingReturnRoomListFromDetail"
-        ],
-        "pre_wait_freezes": 300,
         "max_hit": 3,
-        "post_delay": 2000
+        "next": [
+            "DailyTrainingRouter"
+        ]
     },
     "DailyTrainingCloseEnergyPrompt": {
         "recognition": {
-            "type": "OCR",
+            "type": "Or",
             "param": {
-                "expected": [
-                    "调教点不足",
-                    "禁忌果实",
-                    "补充能量",
-                    "购买"
-                ],
-                "roi": [
-                    80,
-                    500,
-                    560,
-                    310
+                "any_of": [
+                    "__DailyTrainingEnergyText",
+                    "__DailyTrainingEnergyTemplate"
                 ]
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": [
-                    360,
-                    840
-                ]
+                "custom_action": "DailyTrainingClosePrompt",
+                "custom_action_param": {
+                    "kind": "energy"
+                }
             }
         },
-        "post_wait_freezes": {
-            "time": 700,
+        "next": [
+            "DailyTrainingRouter"
+        ],
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
             "target": [
-                0,
-                0,
-                0,
-                0
+                110,
+                575,
+                500,
+                80
             ]
         },
-        "next": [
-            "CommonStopOnMain",
-            "DailyTrainingReturnRoomListFromDetail",
-            "DailyTrainingReturnRoomListFromDetailFallback"
-        ],
-        "pre_wait_freezes": 300
+        "max_hit": 3
     },
     "DailyTrainingCloseShortagePopup": {
         "recognition": {
@@ -423,55 +369,58 @@
             "param": {
                 "expected": [
                     "道具不足",
-                    "点数不足",
-                    "购买"
+                    "道具数量不足",
+                    "持有数量不足",
+                    "魂晶",
+                    "是否.*购买",
+                    "购买.*道具"
                 ],
                 "roi": [
-                    130,
-                    500,
-                    460,
-                    420
+                    95,
+                    470,
+                    540,
+                    290
                 ]
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": [
-                    250,
-                    840
-                ]
+                "custom_action": "DailyTrainingClosePrompt",
+                "custom_action_param": {
+                    "kind": "shortage"
+                }
             }
         },
-        "post_wait_freezes": {
-            "time": 500,
+        "next": [
+            "DailyTrainingRouter"
+        ],
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
             "target": [
-                0,
-                0,
-                0,
-                0
+                110,
+                575,
+                500,
+                80
             ]
         },
-        "next": [
-            "CommonStopOnMain",
-            "DailyTrainingReturnRoomListFromDetail",
-            "DailyTrainingReturnRoomListFromDetailFallback"
-        ],
-        "pre_wait_freezes": 300
+        "max_hit": 3
     },
     "DailyTrainingReturnRoomListFromDetailFallback": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "调教道具"
+                "template": [
+                    "DailyTraining/DetailTitle720.png"
                 ],
                 "roi": [
-                    110,
+                    105,
                     930,
-                    180,
-                    65
-                ]
+                    210,
+                    80
+                ],
+                "threshold": 0.8
             }
         },
         "action": {
@@ -485,21 +434,18 @@
         },
         "next": [
             "[JumpBack]CommonWaitLoading",
-            "DailyTrainingCloseStoryPrompt",
-            "DailyTrainingCloseLimitPrompt",
-            "[JumpBack]CommonCloseMainGift",
-            "CommonStopOnMainObserve",
-            "DailyTrainingReturnMainFromRoomList"
+            "DailyTrainingReturnMainFromRoomList",
+            "CommonStopOnMainObserve"
         ],
         "pre_wait_freezes": {
             "time": 300,
+            "timeout": 1000,
             "target": [
                 15,
                 52,
                 85,
                 44
-            ],
-            "timeout": 1500
+            ]
         },
         "max_hit": 1,
         "timeout": 1500,
@@ -509,17 +455,18 @@
     },
     "DailyTrainingReturnRoomListFromDetail": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "调教道具"
+                "template": [
+                    "DailyTraining/DetailTitle720.png"
                 ],
                 "roi": [
-                    110,
+                    105,
                     930,
-                    180,
-                    65
-                ]
+                    210,
+                    80
+                ],
+                "threshold": 0.8
             }
         },
         "action": {
@@ -533,21 +480,18 @@
         },
         "next": [
             "[JumpBack]CommonWaitLoading",
-            "DailyTrainingCloseStoryPrompt",
-            "DailyTrainingCloseLimitPrompt",
-            "[JumpBack]CommonCloseMainGift",
-            "CommonStopOnMainObserve",
-            "DailyTrainingReturnMainFromRoomList"
+            "DailyTrainingReturnMainFromRoomList",
+            "CommonStopOnMainObserve"
         ],
         "pre_wait_freezes": {
             "time": 300,
+            "timeout": 1000,
             "target": [
                 15,
                 52,
                 85,
                 44
-            ],
-            "timeout": 1500
+            ]
         },
         "timeout": 1500,
         "on_error": [
@@ -594,13 +538,13 @@
         ],
         "pre_wait_freezes": {
             "time": 300,
+            "timeout": 1000,
             "target": [
                 15,
                 52,
                 85,
                 44
-            ],
-            "timeout": 1500
+            ]
         },
         "max_hit": 3
     },
@@ -635,174 +579,127 @@
             "type": "OCR",
             "param": {
                 "expected": [
-                    "通用"
+                    "^通用$"
                 ],
                 "roi": [
-                    390,
-                    930,
-                    130,
-                    85
+                    400,
+                    935,
+                    115,
+                    75
                 ]
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": true
+                "custom_action": "ClickRecognitionCenter",
+                "custom_action_param": {}
             }
         },
         "next": [
-            "DailyTrainingChooseCommonItem"
+            "DailyTrainingRouter"
         ],
-        "pre_wait_freezes": 300
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": true
+        },
+        "max_hit": 6
     },
     "DailyTrainingSelectEventTab": {
         "recognition": {
             "type": "OCR",
             "param": {
                 "expected": [
-                    "活动"
+                    "^活动$"
                 ],
                 "roi": [
-                    520,
-                    930,
-                    130,
-                    85
+                    525,
+                    935,
+                    115,
+                    75
                 ]
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": true
+                "custom_action": "ClickRecognitionCenter",
+                "custom_action_param": {}
             }
         },
         "next": [
-            "DailyTrainingChooseEventItem"
+            "DailyTrainingRouter"
         ],
-        "pre_wait_freezes": 300
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": true
+        },
+        "max_hit": 6
     },
     "DailyTrainingChooseCommonItem": {
-        "recognition": {
-            "type": "DirectHit"
-        },
         "next": [
-            "DailyTrainingClickCommonItem"
+            "DailyTrainingRouter"
         ],
-        "timeout": 1500,
-        "on_error": [
-            "DailyTrainingReturnRoomListFromDetailFallback"
-        ]
+        "timeout": 1500
     },
     "DailyTrainingChooseEventItem": {
-        "recognition": {
-            "type": "DirectHit"
-        },
         "next": [
-            "DailyTrainingClickEventItem"
+            "DailyTrainingRouter"
         ],
-        "timeout": 1500,
-        "on_error": [
-            "DailyTrainingReturnRoomListFromDetailFallback"
-        ]
+        "timeout": 1500
     },
     "DailyTrainingClickCenterStart": {
-        "recognition": {
-            "type": "DirectHit"
-        },
         "next": [
             "DailyTrainingClickCenterSlow"
         ]
     },
     "DailyTrainingClickCenterAllPoints": {
-        "recognition": {
-            "type": "OCR",
-            "param": {
-                "expected": [
-                    "调教道具",
-                    "通用",
-                    "活动"
-                ],
-                "roi": [
-                    90,
-                    900,
-                    560,
-                    340
-                ]
-            }
-        },
-        "action": {
-            "type": "LongPress",
-            "param": {
-                "target": [
-                    360,
-                    640
-                ],
-                "duration": 3000
-            }
-        },
-        "post_wait_freezes": {
-            "time": 1000,
-            "target": [
-                0,
-                0,
-                0,
-                0
-            ]
-        },
-        "next": [
-            "DailyTrainingCloseStoryPrompt",
-            "DailyTrainingCloseLimitPrompt",
-            "DailyTrainingCloseEnergyPrompt",
-            "DailyTrainingCloseShortagePopup",
-            "CommonStopOnMain",
-            "DailyTrainingClickCenterAllPoints",
-            "DailyTrainingReturnRoomListFromDetail"
-        ],
         "max_hit": 12,
-        "pre_wait_freezes": 300
+        "next": [
+            "DailyTrainingRouter"
+        ]
     },
     "DailyTrainingClickCommonItem": {
         "recognition": {
-            "type": "Custom",
+            "type": "TemplateMatch",
             "param": {
-                "custom_recognition": "DailyTrainingChooseItem",
-                "custom_recognition_param": {
-                    "tab": "common"
-                }
-            }
-        },
-        "action": {
-            "type": "Click",
-            "param": {
-                "target": true
+                "template": [
+                    "DailyTraining/DetailTitle720.png"
+                ],
+                "roi": [
+                    105,
+                    930,
+                    210,
+                    80
+                ],
+                "threshold": 0.8
             }
         },
         "next": [
-            "DailyTrainingClickCenterStart"
-        ],
-        "pre_wait_freezes": 300
+            "DailyTrainingRouter"
+        ]
     },
     "DailyTrainingClickEventItem": {
         "recognition": {
-            "type": "Custom",
+            "type": "TemplateMatch",
             "param": {
-                "custom_recognition": "DailyTrainingChooseItem",
-                "custom_recognition_param": {
-                    "tab": "event"
-                }
-            }
-        },
-        "action": {
-            "type": "Click",
-            "param": {
-                "target": true
+                "template": [
+                    "DailyTraining/DetailTitle720.png"
+                ],
+                "roi": [
+                    105,
+                    930,
+                    210,
+                    80
+                ],
+                "threshold": 0.8
             }
         },
         "next": [
-            "DailyTrainingClickCenterStart"
-        ],
-        "pre_wait_freezes": 300
+            "DailyTrainingRouter"
+        ]
     },
     "DailyTrainingCloseFilterAfterFailure": {
         "recognition": {
@@ -828,7 +725,11 @@
                 ]
             }
         },
-        "pre_wait_freezes": 300,
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": true
+        },
         "next": [
             "DailyTrainingReturnMainFromRoomList"
         ],
@@ -846,28 +747,26 @@
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": true
+                "custom_action": "DailyTrainingClosePrompt",
+                "custom_action_param": {
+                    "kind": "story"
+                }
             }
         },
         "pre_wait_freezes": {
             "time": 300,
+            "timeout": 1000,
             "target": [
                 110,
-                555,
+                575,
                 500,
-                220
-            ],
-            "timeout": 1500
+                80
+            ]
         },
         "next": [
-            "[JumpBack]CommonWaitLoading",
-            "DailyTrainingCloseLimitPrompt",
-            "[JumpBack]CommonCloseMainGift",
-            "CommonStopOnMainObserve",
-            "DailyTrainingReturnRoomListFromDetail",
-            "DailyTrainingReturnMainFromRoomList"
+            "DailyTrainingRouter"
         ],
         "timeout": 5000,
         "max_hit": 3
@@ -916,28 +815,26 @@
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": true
+                "custom_action": "DailyTrainingClosePrompt",
+                "custom_action_param": {
+                    "kind": "limit"
+                }
             }
         },
         "pre_wait_freezes": {
             "time": 300,
+            "timeout": 1000,
             "target": [
                 110,
                 575,
                 500,
-                195
-            ],
-            "timeout": 1500
+                80
+            ]
         },
         "next": [
-            "[JumpBack]CommonWaitLoading",
-            "DailyTrainingCloseStoryPrompt",
-            "[JumpBack]CommonCloseMainGift",
-            "CommonStopOnMainObserve",
-            "DailyTrainingReturnRoomListFromDetail",
-            "DailyTrainingReturnMainFromRoomList"
+            "DailyTrainingRouter"
         ],
         "timeout": 5000,
         "max_hit": 3
@@ -973,5 +870,326 @@
                 ]
             }
         }
+    },
+    "DailyTrainingRun": {
+        "recognition": {
+            "type": "DirectHit"
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "TkfmRunWithRecovery",
+                "custom_action_param": {
+                    "entry": "DailyTrainingStartAttempt",
+                    "label": "调教"
+                }
+            }
+        }
+    },
+    "__DailyTrainingDetailTitle": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyTraining/DetailTitle720.png"
+                ],
+                "roi": [
+                    105,
+                    930,
+                    210,
+                    80
+                ],
+                "threshold": 0.8
+            }
+        }
+    },
+    "__DailyTrainingCommonSelected": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyTraining/CommonSelected720.png"
+                ],
+                "roi": [
+                    390,
+                    930,
+                    135,
+                    85
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyTrainingEventSelected": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyTraining/EventSelected720.png"
+                ],
+                "roi": [
+                    520,
+                    930,
+                    135,
+                    85
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyTrainingSelectedCorner": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyTraining/SelectedCorner720.png",
+                    "DailyTraining/CommonSelectedCorner720.png"
+                ],
+                "roi": [
+                    130,
+                    1060,
+                    450,
+                    40
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyTrainingForbiddenFruit": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyTraining/ForbiddenFruit720.png"
+                ],
+                "roi": [
+                    130,
+                    1070,
+                    450,
+                    98
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "__DailyTrainingCommonTab": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "^通用$"
+                ],
+                "roi": [
+                    400,
+                    935,
+                    115,
+                    75
+                ]
+            }
+        }
+    },
+    "__DailyTrainingEventTab": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "^活动$"
+                ],
+                "roi": [
+                    525,
+                    935,
+                    115,
+                    75
+                ]
+            }
+        }
+    },
+    "__DailyTrainingPromptTitle": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "^提示$"
+                ],
+                "roi": [
+                    275,
+                    370,
+                    170,
+                    230
+                ]
+            }
+        }
+    },
+    "__DailyTrainingSafeModalClose": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyTraining/EnergyClose720.png"
+                ],
+                "roi": [
+                    280,
+                    745,
+                    160,
+                    195
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyTrainingActive": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyTrainingState",
+                "custom_recognition_param": {
+                    "mode": "active"
+                }
+            }
+        }
+    },
+    "__DailyTrainingFinished": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyTrainingState",
+                "custom_recognition_param": {
+                    "mode": "finished"
+                }
+            }
+        }
+    },
+    "DailyTrainingRouter": {
+        "next": [
+            "[JumpBack]CommonWaitLoading",
+            "DailyTrainingCloseEnergyPrompt",
+            "DailyTrainingCloseShortagePopup",
+            "DailyTrainingCloseStoryPrompt",
+            "DailyTrainingCloseLimitPrompt",
+            "DailyTrainingFinishedReturn",
+            "DailyTrainingStep"
+        ],
+        "timeout": 5000,
+        "rate_limit": 150
+    },
+    "DailyTrainingStep": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": [
+                    "__DailyTrainingActive",
+                    "__DailyTrainingDetailTitle"
+                ]
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyTrainingStep",
+                "custom_action_param": {}
+            }
+        },
+        "next": [
+            "DailyTrainingRouter"
+        ],
+        "on_error": [
+            "TkfmTaskFailure"
+        ],
+        "post_delay": 100,
+        "max_hit": 5000
+    },
+    "DailyTrainingFinishedReturn": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": [
+                    "__DailyTrainingFinished",
+                    "__DailyTrainingDetailTitle"
+                ]
+            }
+        },
+        "action": {
+            "type": "Click",
+            "param": {
+                "target": [
+                    40,
+                    75
+                ]
+            }
+        },
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1000,
+            "target": [
+                15,
+                52,
+                85,
+                44
+            ]
+        },
+        "next": [
+            "[JumpBack]CommonWaitLoading",
+            "DailyTrainingReturnMainFromRoomList",
+            "CommonStopOnMainObserve"
+        ],
+        "timeout": 1500,
+        "max_hit": 3,
+        "on_error": [
+            "DailyTrainingFinishedReturn"
+        ]
+    },
+    "__DailyTrainingEnergyText": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "调教点不足",
+                    "是否要购买禁忌果实"
+                ],
+                "roi": [
+                    100,
+                    500,
+                    520,
+                    235
+                ]
+            }
+        }
+    },
+    "__DailyTrainingEnergyTemplate": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyTraining/EnergyPrompt720.png"
+                ],
+                "roi": [
+                    100,
+                    540,
+                    520,
+                    170
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "DailyTrainingResumeDetail": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyTraining/DetailTitle720.png"
+                ],
+                "roi": [
+                    105,
+                    930,
+                    210,
+                    80
+                ],
+                "threshold": 0.8
+            }
+        },
+        "next": [
+            "DailyTrainingRouter"
+        ]
     }
 }
