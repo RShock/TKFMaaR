@@ -70,7 +70,8 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             processor.AddLog("[异常恢复] " + label + "：开始执行。", changeColor: false);
             // Install error branches on this module's context, before preparation and retries.
             // JumpBack retains the existing pipeline stack and business bookkeeping.
-            foreach (string popup in new[] { "TkfmRecoverySessionExpired", "TkfmRecoveryAdvertisement",
+            foreach (string popup in new[] { "TkfmRecoveryWebPageUnavailable", "TkfmRecoveryWebPageUnavailablePriority",
+                "TkfmRecoverySessionExpired", "TkfmRecoveryAdvertisement",
                 "TkfmRecoveryAnnouncement",
                 "TkfmRecoveryEventSignIn", "TkfmRecoverySignIn", "GameCloseSignIn",
                 "TkfmRecoveryBackButton", "TkfmRecoverySystemBack", "GameLoginBackFallback",
@@ -82,12 +83,15 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             if (EnsureGameRunning(context, processor)
                 && RunAttempt(context, processor, entry, successAnyHit)) return !Cancelled(context, processor);
             if (Cancelled(context, processor)) return false;
-            if (!restartOnFailure)
+            bool webPageUnavailable = WebPageFaultCount(context) > 0;
+            if (!restartOnFailure && !webPageUnavailable)
                 return PauseForFailure(processor, label + "执行失败。", continueAfterFailure);
 
             // The single restart allowance is consumed before stop/start/login, including failures there.
             processor.AddLog("[异常恢复] " + label
-                + "首次异常：结束游戏进程，重新启动并登录，再从当前步骤入口重做（仅一次）。", "OrangeRed");
+                + (webPageUnavailable
+                    ? "：纯白区域及OCR“网页无法打开”均已命中，直接结束游戏并重新登录，再继续当前步骤（仅一次）。"
+                    : "首次异常：结束游戏进程，重新启动并登录，再从当前步骤入口重做（仅一次）。"), "OrangeRed");
             string retryOverride = RetryOverride(context, entry).ToString(Formatting.None);
             ResetNavigationHits(context);
             if (Cancelled(context, processor)) return false;
@@ -174,14 +178,25 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
     private static bool Cancelled(IMaaContext context, MaaProcessor processor) =>
         context.IsCancellationRequested || processor.CancellationTokenSource?.IsCancellationRequested == true;
 
+    private static ulong WebPageFaultCount(IMaaContext context)
+    {
+        context.GetHitCount("TkfmRecoveryWebPageUnavailable", out var errors);
+        context.GetHitCount("TkfmRecoveryWebPageUnavailablePriority", out var priority);
+        return errors + priority;
+    }
+
     private static bool RunOnce(IMaaContext context, MaaProcessor processor, string entry, string overrides = "{}")
     {
         if (Cancelled(context, processor)) return false;
+        ulong webFaultsBefore = WebPageFaultCount(context);
         try
         {
             // RunTask clones pipeline overrides while sharing hit counts/anchors. Explicitly reset only
             // navigation counts on retry; do not erase consumption limits or the purchased-stamina anchor.
             var detail = context.RunTask(entry, overrides);
+            // A terminal web-error route requests the outer module's one restart.
+            // Never mistake ending a nested pipeline for business completion.
+            if (WebPageFaultCount(context) > webFaultsBefore) return false;
             return !Cancelled(context, processor) && detail?.Status == MaaJobStatus.Succeeded;
         }
         catch (Exception ex)
@@ -227,36 +242,66 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
     private static JObject PopupRecoveryOverride(IMaaContext context)
     {
         var overrides = new JObject();
+        var observed = new[] {
+            "TkfmRecoveryWebPageUnavailablePriority", "TkfmRecoverySessionExpiredPriority",
+            "TkfmRecoveryAnnouncementObserved", "TkfmRecoveryEventSignInObserved",
+            "TkfmRecoverySignInObserved", "TkfmRecoveryAdvertisementObserved"
+        };
+        var nodes = new Dictionary<string, JObject>();
         foreach (string name in context.Tasker.Resource.NodeList)
         {
             // Recovery branches must not recursively recover themselves. Pure recognition
             // helpers have no outgoing flow and are not task failure boundaries.
             if (name.StartsWith("TkfmRecovery", StringComparison.Ordinal)
                 || name == "TkfmTaskFailure" || !context.GetNodeData(name, out var raw)) continue;
-            var node = JObject.Parse(raw);
+            nodes[name] = JObject.Parse(raw);
+        }
+        var responseWaits = new HashSet<string>(nodes.Where(item => IsResponseWait(item.Value))
+            .Select(item => item.Key));
+        foreach (var item in nodes)
+        {
+            string name = item.Key;
+            var node = item.Value;
             if ((string)node["action"]?["param"]?["custom_action"] == "TkfmRunWithRecovery") continue;
             var next = NodeList(node["next"]);
             var original = NodeList(node["on_error"]);
             if (next.Count == 0 && original.Count == 0) continue;
             // A normal page can have the same arrow as an advertisement. Recognize the
             // complete back button first so it uses navigation recovery and its truthful log.
-            var errors = new JArray("[JumpBack]TkfmRecoverySessionExpired", "[JumpBack]TkfmRecoveryAnnouncement",
+            var errors = new JArray("TkfmRecoveryWebPageUnavailable",
+                "[JumpBack]TkfmRecoverySessionExpired", "[JumpBack]TkfmRecoveryAnnouncement",
                 "[JumpBack]TkfmRecoveryEventSignIn", "[JumpBack]TkfmRecoverySignIn",
                 "[JumpBack]TkfmRecoveryBackButton", "[JumpBack]TkfmRecoveryAdvertisement",
                 "[JumpBack]TkfmRecoverySystemBack");
-            foreach (var item in original) errors.Add(item.DeepClone());
+            foreach (var route in original) errors.Add(route.DeepClone());
             if (original.Count == 0) errors.Add("TkfmRecoveryUnhandled");
             var patch = new JObject { ["on_error"] = errors };
-            // Session expiry interrupts every module, including pages with ordinary confirm
-            // buttons. Recognize it before business candidates, without restarting the module.
-            // A separate route avoids repeating the same node in next and on_error.
-            if (next.Count > 0 && !next.Any(item => IsJumpBackRoute(item, "TkfmRecoverySessionExpiredPriority")))
+            if (next.Count > 0)
             {
-                next.Insert(0, new JObject
+                // Each native recognition round tries business targets, then known
+                // interruptions on the same frame. No hit means another round, not a click.
+                // Remove the old leading priority routes before placing them after business.
+                next = new JArray(next.Where(route => !observed.Contains(RouteName(route)))
+                    .Select(route => route.DeepClone()));
+                int insertion = next.Count;
+                for (int i = 0; i < next.Count; i++)
                 {
-                    ["name"] = "TkfmRecoverySessionExpiredPriority", ["jump_back"] = true, ["anchor"] = false
-                });
+                    if (responseWaits.Contains(RouteName(next[i])))
+                    {
+                        // A bookkeeping-only wait would otherwise match every frame and
+                        // conceal interruptions until its independent response timer expires.
+                        insertion = i;
+                        break;
+                    }
+                }
+                foreach (string recovery in observed)
+                    next.Insert(insertion++, recovery == "TkfmRecoveryWebPageUnavailablePriority"
+                        ? new JValue(recovery) : new JValue("[JumpBack]" + recovery));
                 patch["next"] = next;
+                // Twenty seconds of unmatched rounds precede navigation/system-back
+                // fallbacks. Preserve deliberate terminal failure nodes (timeout 0/1).
+                if ((long?)node["timeout"] != 0 && (long?)node["timeout"] != 1)
+                    patch["timeout"] = 20000;
             }
             overrides[name] = patch;
         }
@@ -273,17 +318,28 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
         ? (JArray)array.DeepClone() : value == null || value.Type == JTokenType.Null
             ? new JArray() : new JArray(value.DeepClone());
 
-    private static bool IsJumpBackRoute(JToken value, string name)
+    private static string RouteName(JToken value)
     {
         // GetNodeData returns resolved NodeAttr objects, even for string routes
         // written in source JSON. Keep their jump_back/anchor attributes intact.
-        if (value.Type == JTokenType.String)
-            return string.Equals((string)value, "[JumpBack]" + name, StringComparison.Ordinal);
-        if (value is JObject route)
-            return string.Equals((string)route["name"], name, StringComparison.Ordinal)
-                && route["jump_back"]?.Type == JTokenType.Boolean && (bool)route["jump_back"]
-                && !(route["anchor"]?.Type == JTokenType.Boolean && (bool)route["anchor"]);
-        return false;
+        return value.Type == JTokenType.String
+            ? Regex.Replace((string)value, @"^(?:\[[^\]]+\])+", "")
+            : (string)(value as JObject)?["name"] ?? string.Empty;
+    }
+
+    private static bool IsResponseWait(JObject node)
+    {
+        var recognition = node["recognition"]?["param"];
+        string handler = (string)recognition?["custom_recognition"];
+        JToken parameters = recognition?["custom_recognition_param"];
+        if (parameters?.Type == JTokenType.String)
+        {
+            try { parameters = JToken.Parse((string)parameters); }
+            catch (JsonException) { return false; }
+        }
+        string mode = parameters is JObject config ? (string)config["mode"] : null;
+        return (handler == "DailyTaskRewardsResponseState" && (mode == "wait" || mode == "timeout"))
+            || (handler == "DailyCharacterUpgradeState" && (mode == "pending_wait" || mode == "pending_expired"));
     }
 
     private static JObject RetryOverride(IMaaContext context, string entry)

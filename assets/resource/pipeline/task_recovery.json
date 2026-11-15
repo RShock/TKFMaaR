@@ -16,6 +16,8 @@
                 "DailyAlchemyOrdersCollect",
                 "DailyAlchemyOrdersDeliverVisibleOrder",
                 "DailyAlchemyOrdersStartBlueProduction",
+                "TkfmRecoveryWebPageUnavailable",
+                "TkfmRecoveryWebPageUnavailablePriority",
                 "TkfmRecoverySessionExpired",
                 "TkfmRecoveryAdvertisement",
                 "TkfmRecoveryAnnouncement",
@@ -27,6 +29,51 @@
                 "GameLoginBackFallback",
                 "GameLoginExistingGiftFallback"
             ]
+        }
+    },
+    "TkfmRecoveryWebPageUnavailableText": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "roi": [0, 0, 720, 1280],
+                "expected": ["网页无法打开"],
+                "threshold": 0.3
+            }
+        }
+    },
+    "TkfmRecoveryWebPageUnavailableTarget": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TkfmRecoveryWebPageUnavailable",
+                "custom_recognition_param": {}
+            }
+        }
+    },
+    "TkfmRecoveryWebPageUnavailable": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": ["TkfmRecoveryWebPageUnavailableTarget"]
+            }
+        },
+        "next": ["TkfmTaskFailure"],
+        "timeout": 1,
+        "focus": {
+            "Node.Action.Starting": "异常恢复：检测到连续64×64纯白区域，且OCR识别到“网页无法打开”；结束当前尝试，直接重启游戏，不尝试返回键。"
+        }
+    },
+    "TkfmRecoveryWebPageUnavailablePriority": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": ["TkfmRecoveryWebPageUnavailableTarget"]
+            }
+        },
+        "next": ["TkfmTaskFailure"],
+        "timeout": 1,
+        "focus": {
+            "Node.Action.Starting": "异常恢复：检测到连续64×64纯白区域，且OCR识别到“网页无法打开”；结束当前尝试，直接重启游戏，不尝试返回键。"
         }
     },
     "TkfmRecoverySessionExpiredTitle": {
@@ -59,13 +106,29 @@
             }
         }
     },
+    "TkfmRecoverySessionExpiredReason": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "roi": [85, 565, 550, 115],
+                "threshold": 0.3,
+                "expected": [
+                    "日期.*(?:变更|變更|更新)",
+                    "(?:服务器|伺服器).*(?:异常|異常|错误|錯誤|维护|維護|断|斷)",
+                    "(?:连线|連線|连接|連接|登入|登录|登錄).*(?:失败|失敗|异常|異常|错误|錯誤|逾时|逾時|超时|超時)",
+                    "(?:重新|回到|返回).*(?:登入|登录|登錄|标题|標題)"
+                ]
+            }
+        }
+    },
     "TkfmRecoverySessionExpiredTarget": {
         "recognition": {
             "type": "And",
             "param": {
                 "all_of": [
                     "TkfmRecoverySessionExpiredTitle",
-                    "TkfmRecoverySessionExpiredButton"
+                    "TkfmRecoverySessionExpiredButton",
+                    "TkfmRecoverySessionExpiredReason"
                 ],
                 "box_index": 1
             }
@@ -73,11 +136,12 @@
     },
     "TkfmRecoverySessionExpiredPriority": {
         "recognition": {
-            "type": "And",
+            "type": "Custom",
             "param": {
-                "all_of": [
-                    "TkfmRecoverySessionExpiredTarget"
-                ]
+                "custom_recognition": "TkfmRecoveryPopup",
+                "custom_recognition_param": {
+                    "target": "TkfmRecoverySessionExpiredTarget"
+                }
             }
         },
         "next": [
@@ -120,9 +184,57 @@
             "TkfmTaskFailure"
         ],
         "focus": {
-            "Node.Action.Starting": "异常恢复：检测到中部提示框和确定按钮，按服务器异常／跨日失效处理，点击按钮中心后重新进入登录流程（共享最多两次）。",
+            "Node.Action.Starting": "异常恢复：同帧识别到提示标题、确定按钮及服务器异常／跨日正文，点击按钮中心后重新进入登录流程（共享最多两次）。",
             "Node.Action.Succeeded": "已点击异常提示的确定按钮，继续识别登录页面；识别到无遮挡的出征后再继续原任务，保留购买与消耗记录。"
         }
+    },
+    "TkfmRecoveryAnnouncementObserved": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TkfmRecoveryPopup",
+                "custom_recognition_param": {"target": "GameCloseAnnouncement"}
+            }
+        },
+        "next": ["TkfmRecoveryAnnouncement"],
+        "on_error": ["TkfmTaskFailure"],
+        "timeout": 1000
+    },
+    "TkfmRecoveryEventSignInObserved": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TkfmRecoveryPopup",
+                "custom_recognition_param": {"target": "GameCloseEventSignIn"}
+            }
+        },
+        "next": ["TkfmRecoveryEventSignIn"],
+        "on_error": ["TkfmTaskFailure"],
+        "timeout": 1000
+    },
+    "TkfmRecoverySignInObserved": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TkfmRecoveryPopup",
+                "custom_recognition_param": {"target": "TkfmRecoveryMonthlyCardTarget"}
+            }
+        },
+        "next": ["TkfmRecoverySignIn"],
+        "on_error": ["TkfmTaskFailure"],
+        "timeout": 1000
+    },
+    "TkfmRecoveryAdvertisementObserved": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TkfmRecoveryPopup",
+                "custom_recognition_param": {"target": "GameCloseGift", "reject_full_back": true}
+            }
+        },
+        "next": ["TkfmRecoveryAdvertisement"],
+        "on_error": ["TkfmTaskFailure"],
+        "timeout": 1000
     },
     "TkfmRecoveryRestartGame": {
         "recognition": {

@@ -51,6 +51,7 @@
         },
         "timeout": 360000,
         "next": [
+            "TkfmRecoveryWebPageUnavailablePriority",
             "[JumpBack]TkfmRecoverySessionExpiredPriority",
             "[JumpBack]GameLoginReconnect",
             "GameLoginReconnectExhausted",
@@ -395,6 +396,7 @@
                         "__CommonMainExpeditionButton"
                     ],
                     "absent": [
+                        "TkfmRecoveryWebPageUnavailableTarget",
                         "TkfmRecoverySessionExpiredTarget",
                         "TkfmRecoveryBackButtonTarget",
                         "GameCloseGift",
@@ -559,6 +561,7 @@
         },
         "timeout": 360000,
         "next": [
+            "TkfmRecoveryWebPageUnavailablePriority",
             "[JumpBack]TkfmRecoverySessionExpiredPriority",
             "[JumpBack]GameLoginReconnect",
             "GameLoginReconnectExhausted",
