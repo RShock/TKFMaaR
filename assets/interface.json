@@ -1086,7 +1086,8 @@
             "label": "协会商店 · 其他",
             "description": "银币不限折扣；银币打折仅买折扣商品。",
             "default_case": [
-                "召唤契约"
+                "召唤契约",
+                "魔晶石"
             ],
             "cases": [
                 {
@@ -1106,6 +1107,15 @@
                         }
                     },
                     "label": "阿克色"
+                },
+                {
+                    "name": "魔晶石",
+                    "label": "魔晶石",
+                    "pipeline_override": {
+                        "__DailyShopGuildMagicCrystal": {
+                            "enabled": true
+                        }
+                    }
                 },
                 {
                     "name": "银币",
@@ -1404,7 +1414,9 @@
             "type": "checkbox",
             "label": "协会商店 · 属性石",
             "description": "只购买勾选的商品，售罄跳过。",
-            "default_case": [],
+            "default_case": [
+                "洪水之石"
+            ],
             "cases": [
                 {
                     "name": "烈风之石（打折）",
@@ -1547,6 +1559,15 @@
                     "label": "匕首",
                     "pipeline_override": {
                         "__DailyShopGuildDagger": {
+                            "enabled": true
+                        }
+                    }
+                },
+                {
+                    "name": "榨乳器",
+                    "label": "榨乳器",
+                    "pipeline_override": {
+                        "__DailyShopGuildMilkingMachine": {
                             "enabled": true
                         }
                     }

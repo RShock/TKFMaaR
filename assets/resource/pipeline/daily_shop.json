@@ -922,6 +922,7 @@
                     "target_nodes": [
                         "__DailyShopGuildSummoningContract",
                         "__DailyShopGuildAkaseRecord",
+                        "__DailyShopGuildMagicCrystal",
                         "__DailyShopGuildSilverDiscount",
                         "__DailyShopGuildVineDiscount",
                         "__DailyShopGuildSuccubusWormDiscount",
@@ -935,6 +936,7 @@
                         "__DailyShopGuildFloodStone",
                         "__DailyShopGuildCandle",
                         "__DailyShopGuildDagger",
+                        "__DailyShopGuildMilkingMachine",
                         "__DailyShopGuildSilver"
                     ]
                 }
@@ -1198,6 +1200,29 @@
             "discount_node": "__DailyShopGuildDiscount"
         }
     },
+    "__DailyShopGuildMagicCrystal": {
+        "enabled": false,
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    70,
+                    280,
+                    545,
+                    740
+                ],
+                "template": [
+                    "DailyShop/MagicCrystalIcon720.png",
+                    "DailyShop/MagicCrystalTitle720.png"
+                ],
+                "threshold": 0.96
+            }
+        },
+        "attach": {
+            "target_name": "魔晶石",
+            "policy_node": "DailyShopGuildOtherPolicy"
+        }
+    },
     "__DailyShopGuildAkaseRecord": {
         "enabled": false,
         "recognition": {
@@ -1291,6 +1316,23 @@
         },
         "attach": {
             "target_name": "匕首",
+            "discount_node": "__DailyShopGuildDiscount",
+            "policy_node": "DailyShopGuildToolsPolicy"
+        }
+    },
+    "__DailyShopGuildMilkingMachine": {
+        "enabled": false,
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyShop/MilkingMachineIcon720.png"
+                ],
+                "threshold": 0.96
+            }
+        },
+        "attach": {
+            "target_name": "榨乳器",
             "discount_node": "__DailyShopGuildDiscount",
             "policy_node": "DailyShopGuildToolsPolicy"
         }

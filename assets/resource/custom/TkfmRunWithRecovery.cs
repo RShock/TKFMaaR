@@ -532,6 +532,8 @@ internal sealed class TkfmGameOptionsMigration : IDisposable
                     MigrateShopOptions(processor, tasks);
                 if (!processor.InstanceConfiguration.GetValue("TkfmShopDaggerV1", false))
                     MigrateShopDagger(processor, tasks);
+                if (!processor.InstanceConfiguration.GetValue("TkfmShopCrystalDefaultsV1", false))
+                    MigrateShopCrystalDefaults(processor, tasks);
                 if (processor.InstanceConfiguration.GetValue(MigrationKey, false))
                 {
                     snapshots.Remove(processor);
@@ -596,8 +598,14 @@ internal sealed class TkfmGameOptionsMigration : IDisposable
             || !definition.Cases.Any(item => item.Name == "匕首"))
             throw new InvalidOperationException("匕首选项尚未加载");
         processor.InstanceConfiguration.SetValue("TkfmShopDaggerV1Backup", savedTasks.DeepClone());
+        var previousRows = savedTasks.OfType<JObject>().Where(t => (string)t["entry"] == "DailyShopStart").ToArray();
+        int index = 0;
         foreach (var row in processor.ViewModel.TaskItemViewModels.Where(t => t.InterfaceItem?.Entry == "DailyShopStart"))
         {
+            var previous = previousRows.ElementAtOrDefault(index++);
+            var savedGroup = (previous?["option"] as JArray)?.OfType<JObject>()
+                .FirstOrDefault(option => (string)option["name"] == "协会调教道具");
+            if (savedGroup?["selected_cases"] is JArray) continue;
             var options = row.InterfaceItem.Option ??= new List<MaaInterface.MaaInterfaceSelectOption>();
             var group = options.FirstOrDefault(option => option.Name == "协会调教道具");
             if (group == null)
@@ -616,6 +624,44 @@ internal sealed class TkfmGameOptionsMigration : IDisposable
         processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems,
             processor.ViewModel.TaskItemViewModels.Where(t => !t.IsResourceOptionItem).Select(t => t.InterfaceItem).ToList());
         processor.InstanceConfiguration.SetValue("TkfmShopDaggerV1", true);
+    }
+
+    private static void MigrateShopCrystalDefaults(MaaProcessor processor, JArray savedTasks)
+    {
+        const string marker = "TkfmShopCrystalDefaultsV1";
+        var targets = new[] {
+            // Newly introduced in 1.5. Flood stone already existed in 1.4;
+            // its changed default applies only to newly created configurations.
+            new[] { "指定协会商店购买物品", "魔晶石", "__DailyShopGuildMagicCrystal" }
+        };
+        var definitions = MaaProcessor.Interface?.Option;
+        foreach (var target in targets)
+            if (definitions == null || !definitions.TryGetValue(target[0], out var definition)
+                || !definition.Cases.Any(item => item.Name == target[1]))
+                throw new InvalidOperationException(target[1] + "选项尚未加载");
+        processor.InstanceConfiguration.SetValue(marker + "Backup", savedTasks.DeepClone());
+        foreach (var row in processor.ViewModel.TaskItemViewModels.Where(t => t.InterfaceItem?.Entry == "DailyShopStart"))
+        {
+            var options = row.InterfaceItem.Option ??= new List<MaaInterface.MaaInterfaceSelectOption>();
+            foreach (var target in targets)
+            {
+                var group = options.FirstOrDefault(option => option.Name == target[0]);
+                if (group == null)
+                {
+                    group = new MaaInterface.MaaInterfaceSelectOption {
+                        Name = target[0], Index = 0, Data = new Dictionary<string, string>(),
+                        SelectedCases = new List<string>()
+                    };
+                    options.Add(group);
+                }
+                group.SelectedCases ??= new List<string>();
+                if (!group.SelectedCases.Contains(target[1])) group.SelectedCases.Add(target[1]);
+                row.InterfaceItem.PipelineOverride?.Remove(target[2]);
+            }
+        }
+        processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems,
+            processor.ViewModel.TaskItemViewModels.Where(t => !t.IsResourceOptionItem).Select(t => t.InterfaceItem).ToList());
+        processor.InstanceConfiguration.SetValue(marker, true);
     }
 
     private static void MigrateShopOptions(MaaProcessor processor, JArray savedTasks)

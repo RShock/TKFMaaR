@@ -18,9 +18,9 @@ SHOP_GROUPS = (
     (
         "协会调教道具",
         "指定协会商店购买物品",
-        ("藤蔓（打折）", "淫魔虫（打折）", "电击棒（打折）", "史莱姆（打折）", "八目鳗（打折）", "蜡烛", "匕首"),
+        ("藤蔓（打折）", "淫魔虫（打折）", "电击棒（打折）", "史莱姆（打折）", "八目鳗（打折）", "蜡烛", "匕首", "榨乳器"),
     ),
-    ("指定协会商店购买物品", "指定协会商店购买物品", ("召唤契约", "阿克色记录", "银币", "银币（打折）")),
+    ("指定协会商店购买物品", "指定协会商店购买物品", ("召唤契约", "阿克色记录", "魔晶石", "银币", "银币（打折）")),
 )
 SHOP_DEFAULTS = {
     "指定购买物品": ["招募命令", "初级体力药水"],
@@ -92,6 +92,9 @@ def migrate_shop_dagger(config):
             continue
         options = task.setdefault("option", [])
         group = next((option for option in options if option.get("name") == "协会调教道具"), None)
+        # An explicit existing selection (including []) wins over changed defaults.
+        if group is not None and isinstance(group.get("selected_cases"), list):
+            continue
         if group is None:
             group = {"name": "协会调教道具", "index": 0, "data": {}, "selected_cases": []}
             options.append(group)
@@ -105,11 +108,41 @@ def migrate_shop_dagger(config):
     config["TkfmShopDaggerV1"] = True
 
 
+def migrate_shop_crystal_defaults(config):
+    marker = "TkfmShopCrystalDefaultsV1"
+    if config.get(marker) is True:
+        return
+    config[marker + "Backup"] = copy.deepcopy(config.get("TaskItems", []))
+    targets = (
+        ("指定协会商店购买物品", "魔晶石", "__DailyShopGuildMagicCrystal"),
+    )
+    for task in config.get("TaskItems", []):
+        if task.get("entry") != "DailyShopStart":
+            continue
+        options = task.setdefault("option", [])
+        for group_name, case_name, node in targets:
+            group = next((option for option in options if option.get("name") == group_name), None)
+            if group is None:
+                group = {"name": group_name, "index": 0, "data": {}, "selected_cases": []}
+                options.append(group)
+            selected = group.get("selected_cases")
+            if not isinstance(selected, list):
+                selected = []
+                group["selected_cases"] = selected
+            # Magic crystal is new in 1.5. Flood stone already existed in 1.4;
+            # changing its default must never overwrite an old explicit opt-out.
+            if case_name not in selected:
+                selected.append(case_name)
+            task.get("pipeline_override", {}).pop(node, None)
+    config[marker] = True
+
+
 def migrate(config):
     # This also applies to instances whose task choices were already migrated.
     config["UseSeparateScreenshotTasker"] = False
     migrate_shop_groups(config)
     migrate_shop_dagger(config)
+    migrate_shop_crystal_defaults(config)
     if config.get("TkfmGameOptionsV2") is True:
         return
     tasks = config.get("TaskItems", [])
