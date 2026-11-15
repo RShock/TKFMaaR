@@ -26,6 +26,11 @@ class AlchemySession:
 
 _SESSIONS: dict[str, AlchemySession] = {}
 ATTEMPT_LIMIT = 3
+# Maa context actions use the project's 720x1280 logical screen and scale to
+# the device. Manual observation opened the drawer at (45, 628); this is
+# (6.25% width, 49.0625% height), independent of the desktop window or hero art.
+DRAWER_POINT_RATIO = (45 / 720, 628 / 1280)
+DRAWER_POINT = tuple(round(ratio * size) for ratio, size in zip(DRAWER_POINT_RATIO, (720, 1280)))
 
 
 def _session(context):
@@ -103,6 +108,10 @@ class DailyAlchemyClickCurrent(CustomAction):
             image = context.tasker.controller.cached_image
             if target == "delivery":
                 box, detail = _delivery(context, image)
+            elif target == "DailyAlchemyOrdersOpenDrawer":
+                ready = _hit(context, image, target)
+                box = (*DRAWER_POINT, 1, 1) if ready else None
+                detail = {}
             else:
                 result = _hit(context, image, target)
                 box, detail = (result.box if result else None), {}
@@ -130,6 +139,12 @@ class DailyAlchemyClickCurrent(CustomAction):
                     # previous input time to switch pages, then recognize again.
                     return True
                 session.navigation_clicked_at[target] = now
+                if target == "DailyAlchemyOrdersOpenDrawer":
+                    print(
+                        f"[炼金] 已确认主页且无已知遮挡，点击左侧抽屉固定点{DRAWER_POINT}"
+                        "（720×1280基准；宽6.25%、高49.0625%），随后重新识别炼金图标。",
+                        flush=True,
+                    )
             result = context.run_action_direct(JActionType.Click, JClick(target=(x + width // 2, y + height // 2)))
             return result is not None and result.success
         except Exception as error:

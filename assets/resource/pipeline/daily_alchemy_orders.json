@@ -40,13 +40,23 @@
     },
     "DailyAlchemyOrdersOpenDrawer": {
         "recognition": {
-            "type": "And",
+            "type": "Custom",
             "param": {
-                "all_of": [
-                    "CommonMainReady",
-                    "__DailyAlchemyOrdersDrawerArrow"
-                ],
-                "box_index": 1
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": [
+                        "CommonMainReady"
+                    ],
+                    "absent": [
+                        "__DailyAlchemyOrdersDrawerIcon",
+                        "TkfmRecoverySessionExpiredTarget",
+                        "TkfmRecoveryMonthlyCardTarget",
+                        "GameCloseGift",
+                        "GameCloseAnnouncement",
+                        "GameCloseEventSignIn",
+                        "TkfmRecoveryBackButtonTarget"
+                    ]
+                }
             }
         },
         "action": {
@@ -61,16 +71,14 @@
         "next": [
             "DailyAlchemyOrdersScanOrder"
         ],
-        "pre_wait_freezes": {
-            "time": 300,
-            "target": true,
-            "timeout": 1500
-        },
         "on_error": [
             "DailyAlchemyOrdersRetryScan"
         ],
         "max_hit": 6,
-        "post_delay": 2000
+        "post_delay": 2000,
+        "focus": {
+            "Node.Action.Starting": "炼金：已识别主页且未见抽屉炼金图标或已知遮挡，按固定屏幕比例点击左侧箭头，不匹配角色背景中的箭头图片。"
+        }
     },
     "DailyAlchemyOrdersOpenAlchemy": {
         "recognition": {
@@ -432,21 +440,6 @@
                         "__DailyAlchemyOrdersDetailClose"
                     ]
                 }
-            }
-        }
-    },
-    "__DailyAlchemyOrdersDrawerArrow": {
-        "recognition": {
-            "type": "TemplateMatch",
-            "param": {
-                "template": "DailyAlchemyOrders/DrawerArrow720.png",
-                "roi": [
-                    15,
-                    580,
-                    80,
-                    100
-                ],
-                "threshold": 0.9
             }
         }
     },
