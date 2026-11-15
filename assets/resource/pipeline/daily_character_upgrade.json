@@ -1,12 +1,4 @@
 {
-    "DailyCharacterUpgradeClickCenter": {
-        "action": {
-            "type": "Custom",
-            "param": {
-                "custom_action": "ClickRecognitionCenter"
-            }
-        }
-    },
     "DailyCharacterUpgradeRequired": {
         "recognition": {
             "type": "Custom",

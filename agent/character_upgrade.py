@@ -11,7 +11,7 @@ configure_runtime()
 from maa.agent.agent_server import AgentServer
 from maa.custom_action import CustomAction
 from maa.custom_recognition import CustomRecognition
-from maa.pipeline import JOCR
+from maa.pipeline import JActionType, JClick, JOCR
 
 from common import safe_json_loads
 
@@ -301,7 +301,15 @@ class DailyCharacterUpgradeAction(CustomAction):
                 print(f"[领奖前强化] 第{session.issued}/2次提交：{detail['snapshot']['title']}，最低级药水1瓶，+200exp；等待实际扣除。", flush=True)
             if mode == "select_potion":
                 session.last_selection = time.monotonic()
-            click = context.run_action("DailyCharacterUpgradeClickCenter", box=box)
+            # A nested Custom action created by run_action has no recognition ID.
+            # Send the recognized center to native Click instead of invoking a
+            # second Python callback that the SDK rejects with reco_id=0.
+            x, y, width, height = (int(value) for value in box)
+            if width <= 0 or height <= 0:
+                return False
+            click = context.run_action_direct(
+                JActionType.Click, JClick(target=(x + width // 2, y + height // 2))
+            )
             if click is None or not click.success:
                 return False
             if mode == "reset_filter":
