@@ -1,15 +1,4 @@
 {
-    "DailyDispatchScheduleConfig": {
-        "attach": {
-            "enabled": false,
-            "auto_countdown": false,
-            "run_at": "03:32",
-            "close_game": false,
-            "manage_emulator": false,
-            "close_wait": false,
-            "close_emulator": false
-        }
-    },
     "DailyDispatchRunNow": {
         "recognition": {
             "type": "DirectHit"
@@ -22,17 +11,6 @@
                     "entry": "DailyDispatchStartAttempt",
                     "label": "每日派遣"
                 }
-            }
-        }
-    },
-    "DailyDispatchCloseGame": {
-        "recognition": {
-            "type": "DirectHit"
-        },
-        "action": {
-            "type": "StopApp",
-            "param": {
-                "package": "com.pinkcore.tkfm"
             }
         }
     },
@@ -52,6 +30,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "[JumpBack]CommonCloseMainGift",
+            "DailyDispatchEnterFromDrawer",
             "DailyDispatchOpenDrawerFromMain",
             "DailyDispatchScanOverview",
             "[JumpBack]DailyDispatchCloseReturnPopup",
@@ -62,11 +41,22 @@
     },
     "DailyDispatchOpenDrawerFromMain": {
         "recognition": {
-            "type": "And",
+            "type": "Custom",
             "param": {
-                "all_of": [
-                    "CommonMainReady"
-                ]
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": ["__DailyDispatchHomeExpedition"],
+                    "absent": [
+                        "__DailyDispatchDrawerTeamLabel",
+                        "DailyDispatchClickActionableDrawerSlot",
+                        "TkfmRecoveryReturnTitleTarget",
+                        "TkfmRecoverySessionExpiredTarget",
+                        "GameCloseGift",
+                        "GameCloseAnnouncement",
+                        "GameCloseEventSignIn",
+                        "TkfmRecoveryMonthlyCardTarget"
+                    ]
+                }
             }
         },
         "action": {
@@ -83,18 +73,108 @@
         ],
         "pre_wait_freezes": {
             "time": 300,
-            "target": true,
+            "target": [10, 590, 70, 80],
             "timeout": 1500
+        },
+        "max_hit": 6,
+        "post_delay": 300,
+        "focus": {
+            "Node.Action.Starting": "派遣：识别到主页出征图片，且抽屉未打开，点击左侧固定入口；恢复后沿用本任务继续，不重置派遣进度。"
         },
         "rate_limit": 1000
     },
+    "__DailyDispatchHomeExpedition": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "Common/MainExpeditionButton720.png"
+                ],
+                "roi": [
+                    480,
+                    820,
+                    240,
+                    210
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
     "DailyDispatchEnterFromDrawer": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": ["__DailyDispatchDrawerTeamLabel"]
+            }
+        },
         "next": [
             "DailyDispatchClickActionableDrawerSlot",
-            "DailyDispatchOpenBusyDrawerSlot"
+            "DailyDispatchDrawerAllBusy",
+            "DailyDispatchOpenBusyDrawerSlot",
+            "DailyDispatchScanOverview",
+            "DailyDispatchOpenDrawerFromMain"
         ],
         "timeout": 5000,
         "rate_limit": 1000
+    },
+    "DailyDispatchDrawerAllBusy": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": [
+                        "__DailyDispatchDrawerTeamLabel",
+                        "DailyDispatchDrawerCountdownSlot1",
+                        "DailyDispatchDrawerCountdownSlot2",
+                        "DailyDispatchDrawerCountdownSlot3"
+                    ],
+                    "absent": ["DailyDispatchClickActionableDrawerSlot"]
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "TkfmDispatchSchedule",
+                "custom_action_param": {
+                    "mode": "countdown",
+                    "source": "drawer"
+                }
+            }
+        },
+        "on_error": [
+            "DailyDispatchClickActionableDrawerSlot",
+            "DailyDispatchOpenBusyDrawerSlot",
+            "DailyDispatchScanOverview"
+        ]
+    },
+    "DailyDispatchDrawerCountdownSlot1": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "roi": [10, 573, 148, 35],
+                "expected": ["^(?!00[:：]00[:：]00$)[0-9]{2}[:：][0-5][0-9][:：][0-5][0-9]$"]
+            }
+        }
+    },
+    "DailyDispatchDrawerCountdownSlot2": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "roi": [10, 646, 148, 35],
+                "expected": ["^(?!00[:：]00[:：]00$)[0-9]{2}[:：][0-5][0-9][:：][0-5][0-9]$"]
+            }
+        }
+    },
+    "DailyDispatchDrawerCountdownSlot3": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "roi": [10, 722, 148, 35],
+                "expected": ["^(?!00[:：]00[:：]00$)[0-9]{2}[:：][0-5][0-9][:：][0-5][0-9]$"]
+            }
+        }
     },
     "DailyDispatchClickActionableDrawerSlot": {
         "recognition": {
@@ -238,7 +318,8 @@
             "[JumpBack]CommonWaitLoading",
             "DailyDispatchOpenCompletedSlot",
             "DailyDispatchOpenIdleSlot",
-            "DailyDispatchVerifyComplete"
+            "DailyDispatchVerifyComplete",
+            "DailyDispatchOpenDrawerFromMain"
         ],
         "timeout": 6000,
         "rate_limit": 1000
@@ -436,7 +517,9 @@
         },
         "next": [
             "[JumpBack]CommonWaitLoading",
-            "DailyDispatchScanOverview"
+            "DailyDispatchScanOverview",
+            "DailyDispatchEnterFromDrawer",
+            "DailyDispatchOpenDrawerFromMain"
         ],
         "pre_wait_freezes": {
             "time": 300,

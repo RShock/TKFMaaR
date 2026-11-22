@@ -35,6 +35,9 @@ public sealed class TkfmRuntimeSettings : IMaaCustomAction
 
 internal sealed class TkfmRuntimeSettingsUI : IDisposable
 {
+    private static bool TaskListBusy() =>
+        (AppDomain.CurrentDomain.GetData("TKFMaa.TaskListGuard.IsBusy") as Func<bool>)?.Invoke() == true;
+
     private readonly DispatcherTimer timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly Dictionary<Control, IDisposable> enabled = new Dictionary<Control, IDisposable>();
     private readonly Dictionary<StackPanel, TextBlock> notices = new Dictionary<StackPanel, TextBlock>();
@@ -88,7 +91,7 @@ internal sealed class TkfmRuntimeSettingsUI : IDisposable
 
     private void Refresh(object sender, EventArgs args)
     {
-        if (disposed || Instances.TopLevel == null) return;
+        if (disposed || Instances.TopLevel == null || TaskListBusy()) return;
         try
         {
             var current = new HashSet<Control>();

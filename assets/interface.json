@@ -39,6 +39,20 @@
     },
     "task": [
         {
+            "name": "启动游戏",
+            "entry": "GameLoginStart",
+            "default_check": true,
+            "option": [
+                "定时任务允许自动启动模拟器",
+                "定时任务执行完毕后关闭模拟器",
+                "自动最速派遣",
+                "定时执行所有日常任务"
+            ],
+            "doc": [
+                "定时运行只执行已勾选的任务。请让电脑保持唤醒，助手可以留在系统托盘。"
+            ]
+        },
+        {
             "name": "商城购买",
             "entry": "DailyShopStart",
             "option": [
@@ -73,16 +87,16 @@
             "entry": "DailyDispatchStart",
             "option": [
                 "派遣地点优先级",
-                "派遣时间优先级",
-                "定时派遣",
-                "自动根据倒计时再后续执行派遣"
+                "派遣时间优先级"
             ],
             "doc": [
-                "使用前须在游戏内为派遣栏位预先编好可出发队伍；回收完成队伍并按优先级重新派出，不自动编队。",
-                "勾选自动计算下次派遣时间后，读取三队完整倒计时，按最长时间加5秒预约下一次独立派遣；每轮成功后继续预约。未读全则不预约，已有预约可在日志标题栏取消。",
-                "开启定时且关闭自动计算时，点击开始只登记一次性预约，不立即派遣；到点重新启动游戏并完成登录，再单独执行派遣。HH:mm 表示下一次该时刻，也可填写 yyyy-MM-dd HH:mm。",
-                "预约登记后须保持助手运行和电脑唤醒。重启助手后须先连接一次；已错过的预约不会补跑。日志标题栏可取消预约。",
-                "MuMu 12 可选预约后关闭、到点自动启动、成功后关闭指定实例；等待期间无需保持游戏或模拟器运行。失败或手动停止时保留现场。"
+                "助手会收回已完成的队伍，再按所选优先顺序派出。",
+                "",
+                "三队都在派遣时，助手会计算下次派遣时间。开启自动最速派遣后才会到点执行。",
+                "",
+                "下次派遣时间：未预约，执行一次每日派遣后自动计算",
+                "",
+                "推荐将很多低级角色升到30级4星，这样自动派遣组队几乎不会失败。"
             ]
         },
         {
@@ -802,7 +816,6 @@
             "cases": [
                 {
                     "name": "寝室-地牢-训练所-宝藏库-封印密室",
-                    "description": "优先选择魔王寝室，其次地牢、训练所、宝藏库、封印密室。",
                     "pipeline_override": {
                         "DailyDispatchSelectLocationStart": {
                             "next": [
@@ -823,7 +836,6 @@
                 },
                 {
                     "name": "地牢-训练所-宝藏库-封印密室-寝室",
-                    "description": "优先选择地牢，其次训练所、宝藏库、封印密室、魔王寝室。",
                     "pipeline_override": {
                         "DailyDispatchSelectLocationStart": {
                             "next": [
@@ -844,7 +856,6 @@
                 },
                 {
                     "name": "训练所-宝藏库-封印密室-地牢-寝室",
-                    "description": "优先选择训练所，其次宝藏库、封印密室、地牢、魔王寝室。",
                     "pipeline_override": {
                         "DailyDispatchSelectLocationStart": {
                             "next": [
@@ -871,7 +882,6 @@
             "cases": [
                 {
                     "name": "最大时间优先",
-                    "description": "优先选择每个地点从左向右第一个时间按钮。",
                     "pipeline_override": {
                         "DailyDispatchSelectBedroom": {
                             "next": [
@@ -957,7 +967,6 @@
                 },
                 {
                     "name": "短时间优先",
-                    "description": "优先选择每个地点从右向左第一个时间按钮。",
                     "pipeline_override": {
                         "DailyDispatchSelectBedroom": {
                             "next": [
@@ -1134,199 +1143,6 @@
                         }
                     },
                     "label": "银币打折"
-                }
-            ]
-        },
-        "自动根据倒计时再后续执行派遣": {
-            "type": "switch",
-            "label": "自动计算下次派遣时间",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes",
-                    "description": "读全三队倒计时，按最长时间加5秒预约后续独立派遣；成功后自动更新预约。助手须保持运行，日志标题栏可取消。",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "auto_countdown": true
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "No",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "auto_countdown": false
-                            }
-                        }
-                    }
-                }
-            ]
-        },
-        "定时派遣": {
-            "type": "switch",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes",
-                    "description": "手动模式按预约时间登记；开启自动计算时立即读取派遣倒计时并自动预约。到点只运行每日派遣。",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "enabled": true
-                            }
-                        }
-                    },
-                    "option": [
-                        "派遣预约时间",
-                        "派遣成功后关闭游戏",
-                        "定时启停MuMu模拟器"
-                    ]
-                },
-                {
-                    "name": "No",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "enabled": false,
-                                "close_game": false
-                            }
-                        }
-                    }
-                }
-            ]
-        },
-        "派遣预约时间": {
-            "type": "input",
-            "description": "开启自动计算下次派遣时间后，此时间变灰且不可编辑，保留原手动时间；关闭自动计算后可继续编辑。",
-            "inputs": [
-                {
-                    "name": "时间",
-                    "default": "03:32",
-                    "verify": "^(?:\\d{4}-\\d{2}-\\d{2} )?(?:[01]\\d|2[0-3]):[0-5]\\d$",
-                    "pattern_msg": "请输入 HH:mm 或 yyyy-MM-dd HH:mm，明确日期必须在未来"
-                }
-            ],
-            "pipeline_override": {
-                "DailyDispatchScheduleConfig": {
-                    "attach": {
-                        "run_at": "{时间}"
-                    }
-                }
-            }
-        },
-        "定时启停MuMu模拟器": {
-            "type": "switch",
-            "description": "当用户安装mumu模拟器时，可自动开关模拟器实现省电",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes",
-                    "description": "到点启动所选设备对应的 MuMu 12 实例，等待原 ADB 设备就绪；从设备配置自动获取路径和实例编号。",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "manage_emulator": true
-                            }
-                        }
-                    },
-                    "option": [
-                        "预约后关闭MuMu模拟器",
-                        "派遣成功后关闭MuMu模拟器"
-                    ]
-                },
-                {
-                    "name": "No",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "manage_emulator": false
-                            }
-                        }
-                    }
-                }
-            ]
-        },
-        "预约后关闭MuMu模拟器": {
-            "type": "switch",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes",
-                    "description": "预约登记且当前队列空闲后关闭指定实例，节省等待期间耗电；到点再启动。",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "close_wait": true
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "No",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "close_wait": false
-                            }
-                        }
-                    }
-                }
-            ]
-        },
-        "派遣成功后关闭MuMu模拟器": {
-            "type": "switch",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes",
-                    "description": "仅在派遣成功且队列空闲后关闭指定 MuMu 实例；失败或手动停止保留现场。",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "close_emulator": true
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "No",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "close_emulator": false
-                            }
-                        }
-                    }
-                }
-            ]
-        },
-        "派遣成功后关闭游戏": {
-            "type": "switch",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes",
-                    "description": "派遣成功后结束所选服务器的游戏进程，助手保持运行。",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "close_game": true
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "No",
-                    "pipeline_override": {
-                        "DailyDispatchScheduleConfig": {
-                            "attach": {
-                                "close_game": false
-                            }
-                        }
-                    }
                 }
             ]
         },
@@ -1598,6 +1414,68 @@
                             }
                         }
                     }
+                }
+            ]
+        },
+        "定时任务允许自动启动模拟器": {
+            "type": "switch",
+            "default_case": "No",
+            "cases": [
+                {
+                    "name": "Yes"
+                },
+                {
+                    "name": "No"
+                }
+            ]
+        },
+        "定时任务执行完毕后关闭模拟器": {
+            "type": "switch",
+            "default_case": "No",
+            "cases": [
+                {
+                    "name": "Yes"
+                },
+                {
+                    "name": "No"
+                }
+            ]
+        },
+        "自动最速派遣": {
+            "type": "switch",
+            "default_case": "No",
+            "cases": [
+                {
+                    "name": "Yes"
+                },
+                {
+                    "name": "No"
+                }
+            ]
+        },
+        "定时执行所有日常任务": {
+            "type": "switch",
+            "default_case": "No",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "option": [
+                        "日常执行时间"
+                    ]
+                },
+                {
+                    "name": "No"
+                }
+            ]
+        },
+        "日常执行时间": {
+            "type": "input",
+            "inputs": [
+                {
+                    "name": "时间",
+                    "default": "17:30",
+                    "verify": "^\\s*(?:[01]\\d|2[0-3]):[0-5]\\d(?:\\s*[,，]\\s*(?:[01]\\d|2[0-3]):[0-5]\\d)*\\s*$",
+                    "pattern_msg": "请输入 24 小时制时间，例如 17:30。多个时间用逗号隔开。"
                 }
             ]
         }

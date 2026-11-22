@@ -1,5 +1,8 @@
 {
     "GameLoginStart": {
+        "next": ["GameLoginStartAttempt"]
+    },
+    "GameLoginStartAttempt": {
         "recognition": {
             "type": "DirectHit"
         },
@@ -8,24 +11,12 @@
             "param": {
                 "custom_action": "TkfmRunWithRecovery",
                 "custom_action_param": {
-                    "entry": "GameLoginStartAttempt",
-                    "label": "启动游戏"
+                    "mode": "launch_game"
                 }
-            }
-        }
-    },
-    "GameLoginStartAttempt": {
-        "recognition": {
-            "type": "DirectHit"
-        },
-        "action": {
-            "type": "StopApp",
-            "param": {
-                "package": "com.pinkcore.tkfm"
             }
         },
         "next": [
-            "GameLoginLaunch"
+            "GameLoginDispatch"
         ]
     },
     "GameLoginLaunch": {
@@ -53,6 +44,7 @@
         "next": [
             "TkfmRecoveryWebPageUnavailablePriority",
             "[JumpBack]TkfmRecoverySessionExpiredPriority",
+            "[JumpBack]TkfmRecoveryReturnTitleObserved",
             "[JumpBack]GameLoginReconnect",
             "GameLoginReconnectExhausted",
             "[JumpBack]GameSkipStartupAnimation",
@@ -181,37 +173,35 @@
     },
     "GameTapTitleScreen": {
         "recognition": {
-            "type": "OCR",
+            "type": "Custom",
             "param": {
-                "expected": [
-                    "TAPTO START",
-                    "TAP TO START",
-                    "TAPTOSTART",
-                    "TAPTOSTAR",
-                    "Ver",
-                    "Ver.",
-                    "Ver.2.2.1"
-                ],
-                "threshold": 0.3,
-                "roi": [
-                    180,
-                    1060,
-                    540,
-                    220
-                ]
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": [
+                        "__GameTitleStartText",
+                        "__GameTitleUtilityIcons"
+                    ],
+                    "absent": [
+                        "TkfmRecoveryExitGameTarget",
+                        "TkfmRecoverySessionExpiredTarget"
+                    ]
+                }
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": [
-                    360,
-                    1135
-                ]
+                "custom_action": "ClickRecognitionCenter",
+                "custom_action_param": {}
             }
         },
         "max_hit": 5,
-        "post_delay": 1500
+        "post_delay": 1500,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
     },
     "GameWaitResourceCheck": {
         "recognition": {
@@ -351,18 +341,14 @@
     },
     "GameCloseGift": {
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "And",
             "param": {
-                "template": [
-                    "GameLogin/AdvertisementReturn720.png"
+                "all_of": [
+                    "__GameAdvertisementReturnArrow",
+                    "__GameAdvertisementFeaturedTab",
+                    "__GameAdvertisementMonthlyTab"
                 ],
-                "threshold": 0.99,
-                "roi": [
-                    0,
-                    45,
-                    125,
-                    65
-                ]
+                "box_index": 0
             }
         },
         "action": {
@@ -376,13 +362,14 @@
         "post_delay": 800,
         "pre_wait_freezes": {
             "time": 300,
-            "timeout": 1500
+            "timeout": 1500,
+            "target": true
         },
         "next": [
             "GameLoginDispatch"
         ],
         "focus": {
-            "Node.Recognition.Succeeded": "已识别左上返回箭头，准备点击图片中心。",
+            "Node.Recognition.Succeeded": "已同帧识别广告的精选、月卡页签及返回箭头，准备点击箭头图片中心。",
             "Node.Action.Succeeded": "已点击返回箭头，继续按当前画面识别；不等待新的广告出现。"
         }
     },
@@ -398,11 +385,13 @@
                     "absent": [
                         "TkfmRecoveryWebPageUnavailableTarget",
                         "TkfmRecoverySessionExpiredTarget",
+                        "TkfmRecoveryReturnTitleTarget",
                         "TkfmRecoveryBackButtonTarget",
                         "GameCloseGift",
                         "GameCloseAnnouncement",
                         "GameCloseEventSignIn",
-                        "TkfmRecoveryMonthlyCardTarget"
+                        "TkfmRecoveryMonthlyCardTarget",
+                        "TkfmRecoveryExitGameTarget"
                     ]
                 }
             }
@@ -563,6 +552,7 @@
         "next": [
             "TkfmRecoveryWebPageUnavailablePriority",
             "[JumpBack]TkfmRecoverySessionExpiredPriority",
+            "[JumpBack]TkfmRecoveryReturnTitleObserved",
             "[JumpBack]GameLoginReconnect",
             "GameLoginReconnectExhausted",
             "[JumpBack]GameSkipStartupAnimation",
@@ -589,13 +579,13 @@
                 "template": [
                     "GameLogin/CastleButton720.png"
                 ],
-                "threshold": 0.94,
                 "roi": [
                     50,
                     1150,
-                    160,
-                    100
-                ]
+                    145,
+                    110
+                ],
+                "threshold": 0.94
             }
         },
         "action": {
@@ -728,33 +718,29 @@
     },
     "__GameLoginTrainingDetail": {
         "recognition": {
-            "type": "OCR",
+            "type": "Or",
             "param": {
-                "roi": [
-                    110,
-                    930,
-                    180,
-                    65
-                ],
-                "expected": [
-                    "调教道具"
+                "any_of": [
+                    "__DailyTrainingCommonSelected",
+                    "__DailyTrainingEventSelected"
                 ]
             }
         }
     },
     "__GameLoginTaskPage": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
+                "template": [
+                    "Common/TasksPageTitle720.png"
+                ],
                 "roi": [
                     260,
                     140,
                     200,
                     90
                 ],
-                "expected": [
-                    "^任务$"
-                ]
+                "threshold": 0.85
             }
         }
     },
@@ -793,5 +779,106 @@
         "next": [
             "GameLoginDispatch"
         ]
+    },
+    "__GameAdvertisementReturnArrow": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "GameLogin/AdvertisementReturn720.png"
+                ],
+                "threshold": 0.99,
+                "roi": [
+                    0,
+                    45,
+                    125,
+                    65
+                ]
+            }
+        }
+    },
+    "__GameAdvertisementFeaturedTab": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "GameLogin/AdvertisementFeaturedTab720.png"
+                ],
+                "roi": [
+                    310,
+                    105,
+                    105,
+                    60
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__GameAdvertisementMonthlyTab": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "GameLogin/AdvertisementMonthlyTab720.png"
+                ],
+                "roi": [
+                    510,
+                    105,
+                    100,
+                    60
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__GameTitleStartText": {
+        "recognition": {
+            "type": "OCR",
+            "param": {
+                "expected": [
+                    "(?i)TAP\\s*TO\\s*STAR[T]?"
+                ],
+                "threshold": 0.3,
+                "roi": [
+                    170,
+                    1110,
+                    410,
+                    85
+                ]
+            }
+        }
+    },
+    "__GameTitleUtilityIcons": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "GameLogin/TitleUtilityIcons720.png",
+                "roi": [
+                    0,
+                    30,
+                    165,
+                    85
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__GameTitleScreenTarget": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": [
+                        "__GameTitleStartText",
+                        "__GameTitleUtilityIcons"
+                    ],
+                    "absent": [
+                        "TkfmRecoveryExitGameTarget",
+                        "TkfmRecoverySessionExpiredTarget"
+                    ]
+                }
+            }
+        }
     }
 }

@@ -7,72 +7,6 @@ import shutil
 from pathlib import Path
 
 
-SHOP_GROUPS = (
-    ("指定购买物品", "指定购买物品", ("招募命令", "紧急录用证（打折）", "初级体力药水")),
-    ("交易所材料", "指定购买物品", ("初级材料（打折）", "中级材料（打折）")),
-    (
-        "协会属性石",
-        "指定协会商店购买物品",
-        ("烈风之石（打折）", "光明之石（打折）", "黑暗之石（打折）", "火焰之石（打折）", "洪水之石"),
-    ),
-    (
-        "协会调教道具",
-        "指定协会商店购买物品",
-        ("藤蔓（打折）", "淫魔虫（打折）", "电击棒（打折）", "史莱姆（打折）", "八目鳗（打折）", "蜡烛", "匕首", "榨乳器"),
-    ),
-    ("指定协会商店购买物品", "指定协会商店购买物品", ("召唤契约", "阿克色记录", "魔晶石", "银币", "银币（打折）")),
-)
-SHOP_DEFAULTS = {
-    "指定购买物品": ["招募命令", "初级体力药水"],
-    "指定协会商店购买物品": ["召唤契约"],
-}
-
-
-def migrate_shop_groups(config):
-    if config.get("TkfmShopGroupsV2") is True:
-        return
-    interface_path = Path(__file__).resolve().parent.parent / "assets/interface.json"
-    interface = json.loads(interface_path.read_text(encoding="utf-8"))
-    target_nodes = {
-        node
-        for group, _, _ in SHOP_GROUPS
-        for case in interface["option"][group]["cases"]
-        for node in case.get("pipeline_override", {})
-    }
-    group_keys = {key for group, _, _ in SHOP_GROUPS for key in (group, group + "仅购买打折商品")}
-    for task in config.get("TaskItems", []):
-        if task.get("entry") != "DailyShopStart":
-            continue
-        previous = {option.get("name"): option for option in task.get("option", [])}
-        options = [option for option in task.get("option", []) if option.get("name") not in group_keys]
-        for group, source, names in SHOP_GROUPS:
-            saved = previous.get(group, previous.get(source, {}))
-            selected = saved.get("selected_cases")
-            if not isinstance(selected, list):
-                selected = SHOP_DEFAULTS.get(source, [])
-            options.append({
-                "name": group,
-                "index": 0,
-                "data": {},
-                "selected_cases": [name for name in names if name in selected],
-            })
-            switch = group + "仅购买打折商品"
-            if switch in interface["option"]:
-                options.append(copy.deepcopy(previous.get(switch, {"name": switch, "index": 0})))
-        task["option"] = options
-        # Cached task overrides must not resurrect unchecked products after regrouping.
-        overrides = task.get("pipeline_override", {})
-        overrides.pop("DailyShopGuildOtherPolicy", None)
-        for node in target_nodes:
-            value = overrides.get(node)
-            if isinstance(value, dict):
-                value.pop("enabled", None)
-                if not value:
-                    overrides.pop(node, None)
-    config["TkfmShopGroupsV1"] = True
-    config["TkfmShopGroupsV2"] = True
-
-
 def find_count(options):
     for option in options:
         if option.get("name") == "全境征才循环次数":
@@ -83,66 +17,23 @@ def find_count(options):
     return None
 
 
-def migrate_shop_dagger(config):
-    if config.get("TkfmShopDaggerV1") is True:
-        return
-    config["TkfmShopDaggerV1Backup"] = copy.deepcopy(config.get("TaskItems", []))
+def migrate_daily_affairs_options(config):
+    # Fill only missing options, including on configurations migrated by older versions.
     for task in config.get("TaskItems", []):
-        if task.get("entry") != "DailyShopStart":
+        if task.get("entry") not in {"DailyStaminaStart", "CustomStageStart"}:
             continue
         options = task.setdefault("option", [])
-        group = next((option for option in options if option.get("name") == "协会调教道具"), None)
-        # An explicit existing selection (including []) wins over changed defaults.
-        if group is not None and isinstance(group.get("selected_cases"), list):
-            continue
-        if group is None:
-            group = {"name": "协会调教道具", "index": 0, "data": {}, "selected_cases": []}
-            options.append(group)
-        selected = group.get("selected_cases")
-        if not isinstance(selected, list):
-            selected = []
-            group["selected_cases"] = selected
-        if "匕首" not in selected:
-            selected.append("匕首")
-        task.get("pipeline_override", {}).pop("__DailyShopGuildDagger", None)
-    config["TkfmShopDaggerV1"] = True
-
-
-def migrate_shop_crystal_defaults(config):
-    marker = "TkfmShopCrystalDefaultsV1"
-    if config.get(marker) is True:
-        return
-    config[marker + "Backup"] = copy.deepcopy(config.get("TaskItems", []))
-    targets = (
-        ("指定协会商店购买物品", "魔晶石", "__DailyShopGuildMagicCrystal"),
-    )
-    for task in config.get("TaskItems", []):
-        if task.get("entry") != "DailyShopStart":
-            continue
-        options = task.setdefault("option", [])
-        for group_name, case_name, node in targets:
-            group = next((option for option in options if option.get("name") == group_name), None)
-            if group is None:
-                group = {"name": group_name, "index": 0, "data": {}, "selected_cases": []}
-                options.append(group)
-            selected = group.get("selected_cases")
-            if not isinstance(selected, list):
-                selected = []
-                group["selected_cases"] = selected
-            # Magic crystal is new in 1.5. Flood stone already existed in 1.4;
-            # changing its default must never overwrite an old explicit opt-out.
-            if case_name not in selected:
-                selected.append(case_name)
-            task.get("pipeline_override", {}).pop(node, None)
-    config[marker] = True
+        existing = {option.get("name") for option in options}
+        for name in ("每日政务战争演习", "每日政务情报搜集", "每日政务商业经营"):
+            if name not in existing:
+                options.append({"name": name, "index": 0})
+    config["TkfmDailyAffairsOptionsV1"] = True
 
 
 def migrate(config):
     # This also applies to instances whose task choices were already migrated.
     config["UseSeparateScreenshotTasker"] = False
-    migrate_shop_groups(config)
-    migrate_shop_dagger(config)
-    migrate_shop_crystal_defaults(config)
+    migrate_daily_affairs_options(config)
     if config.get("TkfmGameOptionsV2") is True:
         return
     tasks = config.get("TaskItems", [])
@@ -150,11 +41,7 @@ def migrate(config):
     server = next((o for o in login.get("option", []) if o.get("name") == "选择服务器"), {})
     if config.get("Resource", "官服") == "官服" and server.get("index") == 1:
         config["Resource"] = "erolab服务器"
-    config["TaskItems"] = [task for task in tasks if task.get("entry") != "GameLoginStart"]
-    config["CurrentTasks"] = [
-        name for name in config.get("CurrentTasks", []) if not name.endswith("<|||>GameLoginStart")
-    ]
-    for task in config["TaskItems"]:
+    for task in tasks:
         if task.get("entry") != "DailyRecruitmentStart":
             continue
         options = task.get("option", [])
