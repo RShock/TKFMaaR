@@ -57,7 +57,6 @@
             "entry": "DailyShopStart",
             "option": [
                 "指定购买物品",
-                "指定购买物品仅购买打折商品",
                 "交易所材料",
                 "交易所材料仅购买打折商品",
                 "协会属性石",
@@ -65,9 +64,6 @@
                 "协会调教道具",
                 "协会调教道具仅购买打折商品",
                 "指定协会商店购买物品"
-            ],
-            "doc": [
-                "分别勾选交易所和协会商店商品。商品只按固定分辨率图片识别，图片命中后直接购买，不使用 OCR 判断商品或售罄。旧文字清单已停用，请重新确认勾选项。"
             ]
         },
         {
@@ -1017,7 +1013,6 @@
         "指定购买物品": {
             "type": "checkbox",
             "label": "交易所 · 常用道具",
-            "description": "只购买勾选的商品，售罄跳过。",
             "default_case": [
                 "招募命令",
                 "初级体力药水"
@@ -1055,10 +1050,10 @@
         "指定协会商店购买物品": {
             "type": "checkbox",
             "label": "协会商店 · 其他",
-            "description": "银币不限折扣；银币打折仅买折扣商品。",
             "default_case": [
                 "召唤契约",
-                "魔晶石"
+                "魔晶石",
+                "银币（打折）"
             ],
             "cases": [
                 {
@@ -1108,38 +1103,13 @@
                 }
             ]
         },
-        "指定购买物品仅购买打折商品": {
-            "type": "switch",
-            "label": "只购买打折",
-            "default_case": "Yes",
-            "cases": [
-                {
-                    "name": "Yes",
-                    "pipeline_override": {
-                        "DailyShopExchangeSuppliesPolicy": {
-                            "attach": {
-                                "discount_only": true
-                            }
-                        }
-                    }
-                },
-                {
-                    "name": "No",
-                    "pipeline_override": {
-                        "DailyShopExchangeSuppliesPolicy": {
-                            "attach": {
-                                "discount_only": false
-                            }
-                        }
-                    }
-                }
-            ]
-        },
         "交易所材料": {
             "type": "checkbox",
             "label": "交易所 · 材料",
-            "description": "只购买已有图片的勾选材料，售罄跳过。",
-            "default_case": [],
+            "default_case": [
+                "初级材料（打折）",
+                "中级材料（打折）"
+            ],
             "cases": [
                 {
                     "name": "初级材料（打折）",
@@ -1191,8 +1161,11 @@
         "协会属性石": {
             "type": "checkbox",
             "label": "协会商店 · 属性石",
-            "description": "只购买勾选的商品，售罄跳过。",
             "default_case": [
+                "烈风之石（打折）",
+                "光明之石（打折）",
+                "黑暗之石（打折）",
+                "火焰之石（打折）",
                 "洪水之石"
             ],
             "cases": [
@@ -1273,9 +1246,15 @@
         "协会调教道具": {
             "type": "checkbox",
             "label": "协会商店 · 调教道具",
-            "description": "只购买勾选的商品，售罄跳过。",
             "default_case": [
-                "匕首"
+                "藤蔓（打折）",
+                "淫魔虫（打折）",
+                "电击棒（打折）",
+                "史莱姆（打折）",
+                "八目鳗（打折）",
+                "蜡烛",
+                "匕首",
+                "榨乳器"
             ],
             "cases": [
                 {

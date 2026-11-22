@@ -20,6 +20,7 @@
             "[JumpBack]CommonCloseMainGift",
             "DailyShopResetExchangeSession",
             "DailyShopOpenFromMain",
+            "DailyShopResumeFromMain",
             "[JumpBack]DailyShopReturnMain",
             "[JumpBack]CommonEnsureMain"
         ],
@@ -40,18 +41,27 @@
             "[JumpBack]CommonWaitLoading",
             "[JumpBack]CommonCloseMainGift",
             "DailyShopOpenFromMain",
+            "DailyShopResumeFromMain",
             "DailyShopAlreadyInShop"
         ]
     },
     "DailyShopOpenFromMain": {
         "recognition": {
-            "type": "And",
+            "type": "Custom",
             "param": {
-                "all_of": [
-                    "CommonMainReady",
-                    "__DailyShopMainButton"
-                ],
-                "box_index": 1
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": ["__DailyShopMainButton", "__DailyShopHomeExpedition"],
+                    "absent": [
+                        "TkfmRecoveryReturnTitleTarget",
+                        "TkfmRecoverySessionExpiredTarget",
+                        "TkfmRecoveryBackButtonTarget",
+                        "GameCloseGift",
+                        "GameCloseAnnouncement",
+                        "GameCloseEventSignIn",
+                        "TkfmRecoveryMonthlyCardTarget"
+                    ]
+                }
             }
         },
         "action": {
@@ -68,11 +78,71 @@
             "DailyShopDailyExchangeSelected",
             "DailyShopOpenDailyExchange",
             "DailyShopAlreadyInShop",
-            "DailyShopOpenFromMain"
+            "DailyShopOpenFromMain",
+            "DailyShopResumeFromMain"
         ],
         "timeout": 30000,
-        "pre_wait_freezes": 300,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        },
         "max_hit": 3
+    },
+    "__DailyShopHomeExpedition": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "Common/MainExpeditionButton720.png"
+                ],
+                "roi": [
+                    480,
+                    820,
+                    240,
+                    210
+                ],
+                "threshold": 0.9,
+                "method": 10001
+            }
+        }
+    },
+    "DailyShopResumeFromMain": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": ["DailyShopOpenFromMain"],
+                    "absent": []
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyShopClickCenter",
+                "custom_action_param": {}
+            }
+        },
+        "next": [
+            "[JumpBack]CommonWaitLoading",
+            "[JumpBack]CommonCloseMainGift",
+            "DailyShopDailyExchangeSelected",
+            "DailyShopOpenDailyExchange",
+            "DailyShopAlreadyInShop",
+            "DailyShopResumeFromMain"
+        ],
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        },
+        "timeout": 20000,
+        "max_hit": 3,
+        "focus": {
+            "Node.Action.Starting": "商城导航恢复：已识别无遮挡主页，重新点击商城并继续每日兑换；保留购买账目，不重新初始化任务。"
+        }
     },
     "DailyShopAlreadyInShop": {
         "focus": {
@@ -100,7 +170,9 @@
             "[JumpBack]CommonWaitLoading",
             "[JumpBack]CommonCloseMainGift",
             "DailyShopDailyExchangeSelected",
-            "DailyShopOpenDailyExchange"
+            "DailyShopOpenDailyExchange",
+            "DailyShopOpenFromMain",
+            "DailyShopResumeFromMain"
         ],
         "timeout": 30000,
         "max_hit": 3
@@ -121,7 +193,9 @@
         },
         "next": [
             "[JumpBack]CommonWaitLoading",
-            "DailyShopOpenExchangeTab"
+            "DailyShopOpenExchangeTab",
+            "DailyShopOpenFromMain",
+            "DailyShopResumeFromMain"
         ],
         "timeout": 30000,
         "max_hit": 3,
@@ -172,7 +246,9 @@
         },
         "next": [
             "[JumpBack]CommonWaitLoading",
-            "DailyShopOpenExchangeTab"
+            "DailyShopOpenExchangeTab",
+            "DailyShopOpenFromMain",
+            "DailyShopResumeFromMain"
         ],
         "timeout": 30000,
         "pre_wait_freezes": 300,
@@ -180,17 +256,19 @@
     },
     "DailyShopOpenExchangeTab": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "交易所"
+                "template": [
+                    "DailyShop/ExchangeTabExchangeSelected720.png",
+                    "DailyShop/ExchangeTabGuildSelected720.png"
                 ],
                 "roi": [
                     95,
                     180,
                     175,
                     70
-                ]
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
@@ -201,75 +279,32 @@
                 "target": true
             }
         },
-        "post_wait_freezes": {
-            "time": 700,
-            "target": [
-                0,
-                0,
-                0,
-                0
-            ]
-        },
+        "post_wait_freezes": 0,
         "next": [
             "[JumpBack]CommonWaitLoading",
-            "DailyShopExchangeResetTop1"
+            "DailyShopExchangeScanTop"
         ],
-        "pre_wait_freezes": 300
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
     },
     "DailyShopExchangeResetTop1": {
         "recognition": {
             "type": "DirectHit"
         },
-        "action": {
-            "type": "Swipe",
-            "param": {
-                "begin": [
-                    360,
-                    570
-                ],
-                "end": [
-                    360,
-                    940
-                ],
-                "duration": 1000
-            }
-        },
         "next": [
-            "DailyShopExchangeResetTop2"
-        ],
-        "max_hit": 1
+            "DailyShopExchangeScanTop"
+        ]
     },
     "DailyShopExchangeResetTop2": {
         "recognition": {
             "type": "DirectHit"
         },
-        "action": {
-            "type": "Swipe",
-            "param": {
-                "begin": [
-                    360,
-                    570
-                ],
-                "end": [
-                    360,
-                    940
-                ],
-                "duration": 1000
-            }
-        },
         "next": [
             "DailyShopExchangeScanTop"
-        ],
-        "max_hit": 1,
-        "post_wait_freezes": {
-            "time": 400,
-            "target": [
-                70,
-                280,
-                545,
-                740
-            ]
-        }
+        ]
     },
     "DailyShopExchangeScanTop": {
         "next": [
@@ -376,7 +411,7 @@
         "next": [
             "DailyShopExchangeMarkScrolled"
         ],
-        "max_hit": 6,
+        "max_hit": 2,
         "focus": {
             "Node.Action.Succeeded": "当前屏无可购买目标，已向下滚动，继续识别商品"
         }
@@ -762,17 +797,19 @@
     },
     "DailyShopOpenGuildShop": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "协会商店"
+                "template": [
+                    "DailyShop/GuildShopTabExchangeSelected720.png",
+                    "DailyShop/GuildShopTabGuildSelected720.png"
                 ],
                 "roi": [
                     460,
                     180,
                     175,
                     70
-                ]
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
@@ -783,75 +820,32 @@
                 "target": true
             }
         },
-        "post_wait_freezes": {
-            "time": 700,
-            "target": [
-                0,
-                0,
-                0,
-                0
-            ]
-        },
+        "post_wait_freezes": 0,
         "next": [
             "[JumpBack]CommonWaitLoading",
-            "DailyShopGuildResetTop1"
+            "DailyShopGuildScanTop"
         ],
-        "pre_wait_freezes": 300
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
     },
     "DailyShopGuildResetTop1": {
         "recognition": {
             "type": "DirectHit"
         },
-        "action": {
-            "type": "Swipe",
-            "param": {
-                "begin": [
-                    360,
-                    570
-                ],
-                "end": [
-                    360,
-                    940
-                ],
-                "duration": 1000
-            }
-        },
         "next": [
-            "DailyShopGuildResetTop2"
-        ],
-        "max_hit": 1
+            "DailyShopGuildScanTop"
+        ]
     },
     "DailyShopGuildResetTop2": {
         "recognition": {
             "type": "DirectHit"
         },
-        "action": {
-            "type": "Swipe",
-            "param": {
-                "begin": [
-                    360,
-                    570
-                ],
-                "end": [
-                    360,
-                    940
-                ],
-                "duration": 1000
-            }
-        },
         "next": [
             "DailyShopGuildScanTop"
-        ],
-        "max_hit": 1,
-        "post_wait_freezes": {
-            "time": 400,
-            "target": [
-                70,
-                280,
-                545,
-                740
-            ]
-        }
+        ]
     },
     "DailyShopGuildScanTop": {
         "next": [
@@ -907,7 +901,7 @@
         "next": [
             "DailyShopGuildMarkScrolled"
         ],
-        "max_hit": 6,
+        "max_hit": 2,
         "focus": {
             "Node.Action.Succeeded": "当前屏无可购买目标，已向下滚动，继续识别商品"
         }
@@ -978,17 +972,18 @@
     },
     "DailyShopReturnMain": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "城堡"
+                "template": [
+                    "GameLogin/CastleButton720.png"
                 ],
                 "roi": [
-                    65,
+                    55,
                     1160,
-                    120,
-                    80
-                ]
+                    135,
+                    90
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
@@ -1019,17 +1014,19 @@
     },
     "__DailyShopMainButton": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "商城"
+                "template": [
+                    "Common/MainShopButton720.png"
                 ],
                 "roi": [
-                    420,
+                    410,
                     1160,
-                    115,
-                    80
-                ]
+                    135,
+                    90
+                ],
+                "threshold": 0.9,
+                "method": 10001
             }
         }
     },
@@ -1052,8 +1049,7 @@
         },
         "attach": {
             "target_name": "招募命令",
-            "policy_node": "DailyShopExchangeSuppliesPolicy",
-            "discount_node": "__DailyShopExchangeDiscount"
+            "policy_node": "DailyShopExchangeSuppliesPolicy"
         }
     },
     "__DailyShopExchangeEmergencyEmploymentPermit": {
@@ -1075,8 +1071,7 @@
         },
         "attach": {
             "target_name": "紧急录用证",
-            "policy_node": "DailyShopExchangeSuppliesPolicy",
-            "discount_node": "__DailyShopExchangeDiscount"
+            "policy_node": "DailyShopExchangeSuppliesPolicy"
         }
     },
     "__DailyShopExchangeBasicStaminaPotion": {
@@ -1098,8 +1093,7 @@
         },
         "attach": {
             "target_name": "初级体力药水",
-            "policy_node": "DailyShopExchangeSuppliesPolicy",
-            "discount_node": "__DailyShopExchangeDiscount"
+            "policy_node": "DailyShopExchangeSuppliesPolicy"
         }
     },
     "__DailyShopExchangeBasicMaterialDiscount": {
@@ -1729,7 +1723,7 @@
     },
     "DailyShopExchangeSuppliesPolicy": {
         "attach": {
-            "discount_only": true
+            "discount_only": false
         }
     },
     "DailyShopExchangeMaterialsPolicy": {

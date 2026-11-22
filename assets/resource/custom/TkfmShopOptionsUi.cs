@@ -31,6 +31,9 @@ public sealed class TkfmShopOptionsUi : IMaaCustomAction
 
 internal sealed class TkfmShopOptionsUiService : IDisposable
 {
+    private static bool TaskListBusy() =>
+        (AppDomain.CurrentDomain.GetData("TKFMaa.TaskListGuard.IsBusy") as Func<bool>)?.Invoke() == true;
+
     private const string DividerName = "TkfmShopGroupDivider";
     private static readonly HashSet<string> GroupLabels = new HashSet<string>
     {
@@ -51,7 +54,7 @@ internal sealed class TkfmShopOptionsUiService : IDisposable
 
     private void Refresh(object sender, EventArgs args)
     {
-        if (disposed || Instances.TopLevel == null) return;
+        if (disposed || Instances.TopLevel == null || TaskListBusy()) return;
         try
         {
             dividers.RemoveAll(reference => !reference.TryGetTarget(out var divider) || divider.Parent == null);

@@ -21,7 +21,7 @@ _HANDLED_ITEM_KEYS = set()
 _OPENED_CARD_KEYS = set()
 _PENDING_TARGET = None
 _SCAN_STATES = {}
-MAX_DOWN_SCROLLS = 6
+MAX_DOWN_SCROLLS = 2
 MAX_PURCHASE_ATTEMPTS = 3
 PURCHASE_RETRY_INTERVAL = 2.0
 
@@ -404,10 +404,12 @@ class DailyShopMarkScrolled(CustomAction):
         if shop_id not in ("exchange", "guild"):
             return False
         # This action runs only after the pipeline swipe succeeds. The screen
-        # reached by the sixth swipe is still checked before deciding to stop.
+        # reached by the last swipe is still checked before deciding to stop.
         state = _scan_state(shop_id)
         state["position"] += 1
         state["empty_scrolls"] += 1
+        label = "交易所" if shop_id == "exchange" else "协会商店"
+        print(f"[商城] {label}：本轮第{state['position']}/{MAX_DOWN_SCROLLS}次下滚，继续扫描当前屏商品。", flush=True)
         return True
 
 
