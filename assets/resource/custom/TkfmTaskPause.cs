@@ -38,6 +38,9 @@ public sealed class TkfmTaskPause : IMaaCustomAction
 
 internal sealed class TkfmTaskPauseService : IDisposable
 {
+    private static bool TaskListBusy() =>
+        (AppDomain.CurrentDomain.GetData("TKFMaa.TaskListGuard.IsBusy") as Func<bool>)?.Invoke() == true;
+
     private readonly ConcurrentDictionary<MaaProcessor, PauseState> states =
         new ConcurrentDictionary<MaaProcessor, PauseState>();
     private readonly List<Button> buttons = new List<Button>();
@@ -71,6 +74,7 @@ internal sealed class TkfmTaskPauseService : IDisposable
                 states.TryRemove(removed, out _);
             }
 
+            if (TaskListBusy()) return;
             var root = Instances.TopLevel;
             if (root != null)
             {

@@ -3,12 +3,14 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using MaaFramework.Binding;
+using MaaFramework.Binding.Buffers;
 using MaaFramework.Binding.Custom;
 using MFAAvalonia.Configuration;
 using MFAAvalonia.Extensions.MaaFW;
@@ -48,6 +50,12 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             processor = MaaProcessor.Processors.ToArray().FirstOrDefault(p => context.Tasker.Equals(p.MaaTasker));
             if (processor == null)
                 throw new InvalidOperationException("无法定位所属实例，拒绝执行任务");
+            var param = JObject.Parse(args.ActionParam);
+            if ((string)param["mode"] == "launch_game")
+                return LaunchGame(context, processor);
+            // A recognized login interruption runs a bounded child state machine.
+            // It does not enter or initialize the business wrapper a second time.
+            if ((string)param["mode"] == "resume_login") return ResumeLogin(context);
             if (!Running.TryAdd(context.Tasker, 0))
                 return FinishFailure(processor, "异常恢复入口发生递归，拒绝再次进入。", false);
             registered = true;
@@ -58,7 +66,6 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             bool restartOnFailure = failureBehavior == RestartBehavior;
             continueAfterFailure = processor.InstanceConfiguration.GetValue(
                 ConfigurationKeys.ContinueRunningWhenError, false);
-            var param = JObject.Parse(args.ActionParam);
             string entry = (string)param["entry"];
             string label = (string)param["label"] ?? args.NodeName;
             string[] successAnyHit = (param["success_any_hit"] as JArray)?.Values<string>()
@@ -71,6 +78,11 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             // Install error branches on this module's context, before preparation and retries.
             // JumpBack retains the existing pipeline stack and business bookkeeping.
             foreach (string popup in new[] { "TkfmRecoveryWebPageUnavailable", "TkfmRecoveryWebPageUnavailablePriority",
+                "TkfmRecoveryLoginBegin", "TkfmRecoveryResumeLogin", "TkfmRecoveryLoginSucceeded",
+                "TkfmRecoveryLoginTapTitle", "TkfmRecoveryLoginCancelExit", "TkfmRecoveryLoginNetworkConfirm",
+                "TkfmRecoveryLoginAdvertisement", "TkfmRecoveryLoginAnnouncement",
+                "TkfmRecoveryLoginEventSignIn", "TkfmRecoveryLoginMonthlyCard",
+                "TkfmRecoveryReturnTitle",
                 "TkfmRecoverySessionExpired", "TkfmRecoveryAdvertisement",
                 "TkfmRecoveryAnnouncement",
                 "TkfmRecoveryEventSignIn", "TkfmRecoverySignIn", "GameCloseSignIn",
@@ -80,9 +92,16 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
                     throw new InvalidOperationException("无法初始化弹窗恢复额度：" + popup);
             if (!context.OverridePipeline(PopupRecoveryOverride(context).ToString(Formatting.None)))
                 throw new InvalidOperationException("无法安装通用弹窗恢复分支");
+            // One-time module preparation is outside both recovery attempts.
+            // In particular, daily ticket reservations survive a game restart.
+            string initialize = (string)param["initialize"];
+            if (!string.IsNullOrWhiteSpace(initialize)
+                && !RunOnce(context, processor, initialize))
+                throw new InvalidOperationException("无法初始化任务账目：" + initialize);
             if (EnsureGameRunning(context, processor)
                 && RunAttempt(context, processor, entry, successAnyHit)) return !Cancelled(context, processor);
             if (Cancelled(context, processor)) return false;
+            RecordFailure(context, label + "首次执行失败");
             bool webPageUnavailable = WebPageFaultCount(context) > 0;
             if (!restartOnFailure && !webPageUnavailable)
                 return PauseForFailure(processor, label + "执行失败。", continueAfterFailure);
@@ -102,6 +121,7 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
                 if (!RunOnce(context, processor, "TkfmRecoveryRestartGame", loginOverride))
                 {
                     if (Cancelled(context, processor)) return false;
+                    RecordFailure(context, label + "的重启或登录失败");
                     return FinishFailure(processor, label + "的重启或登录失败，不再重启。", continueAfterFailure);
                 }
                 MarkGamePrepared(processor);
@@ -115,6 +135,7 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
                 return true;
             }
             if (Cancelled(context, processor)) return false;
+            RecordFailure(context, label + "重试后仍异常");
             return FinishFailure(processor, label + "重试后仍异常，一次重启额度已用尽。", continueAfterFailure);
         }
         catch (Exception ex)
@@ -125,7 +146,8 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
                 return false;
             }
             if (Cancelled(context, processor)) return false;
-            LoggerHelper.Error("TKFMaa 恢复调度异常：" + ex.ToString());
+            LoggerHelper.Error("TKFMaa 恢复调度异常", ex);
+            RecordFailure(context, "恢复调度失败：" + ex.Message);
             string reason = "恢复调度失败：" + ex.Message + "；不递归重启。";
             return failureBehavior == PauseBehavior
                 ? PauseForFailure(processor, reason, continueAfterFailure)
@@ -134,6 +156,36 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
         finally
         {
             if (registered) Running.TryRemove(context.Tasker, out var unused);
+        }
+    }
+
+    private static void RecordFailure(IMaaContext context, string reason)
+    {
+        LoggerHelper.Error("TKFMaa 任务故障：" + reason);
+        try
+        {
+            // Reuse the most recent task frame before recovery leaves the failure screen.
+            using var image = new MaaImageBuffer();
+            if (context.Tasker.Controller?.GetCachedImage(image) != true
+                || image.IsEmpty || !image.TryGetEncodedData(out Stream encoded)) return;
+            using (encoded)
+            {
+                string directory = Path.Combine(AppPaths.InstallRoot, "debug", "on_error");
+                Directory.CreateDirectory(directory);
+                string file = Path.Combine(directory, $"{DateTime.Now:yyyyMMdd-HHmmss-fff}_{Guid.NewGuid():N}_TkfmRecovery.png");
+                string pending = file + ".tmp";
+                try
+                {
+                    using (var output = new FileStream(pending, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                        encoded.CopyTo(output);
+                    File.Move(pending, file);
+                }
+                finally { if (File.Exists(pending)) File.Delete(pending); }
+            }
+        }
+        catch (Exception ex)
+        {
+            LoggerHelper.Warning("保存故障现场截图失败：" + ex.Message);
         }
     }
 
@@ -244,6 +296,8 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
         var overrides = new JObject();
         var observed = new[] {
             "TkfmRecoveryWebPageUnavailablePriority", "TkfmRecoverySessionExpiredPriority",
+            "TkfmRecoveryLoginObserved",
+            "TkfmRecoveryReturnTitleObserved",
             "TkfmRecoveryAnnouncementObserved", "TkfmRecoveryEventSignInObserved",
             "TkfmRecoverySignInObserved", "TkfmRecoveryAdvertisementObserved"
         };
@@ -266,9 +320,12 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             var next = NodeList(node["next"]);
             var original = NodeList(node["on_error"]);
             if (next.Count == 0 && original.Count == 0) continue;
-            // A normal page can have the same arrow as an advertisement. Recognize the
-            // complete back button first so it uses navigation recovery and its truthful log.
+            // Ordinary pages and real ads can share the complete back button.
+            // GameCloseGift additionally requires the advertisement tabs; generic
+            // back navigation is only an unmatched-timeout fallback.
             var errors = new JArray("TkfmRecoveryWebPageUnavailable",
+                "[JumpBack]TkfmRecoveryLoginObserved",
+                "[JumpBack]TkfmRecoveryReturnTitle",
                 "[JumpBack]TkfmRecoverySessionExpired", "[JumpBack]TkfmRecoveryAnnouncement",
                 "[JumpBack]TkfmRecoveryEventSignIn", "[JumpBack]TkfmRecoverySignIn",
                 "[JumpBack]TkfmRecoveryBackButton", "[JumpBack]TkfmRecoveryAdvertisement",
@@ -314,6 +371,59 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
         return overrides;
     }
 
+    internal static bool ResumeLogin(IMaaContext context)
+    {
+        // This is a bounded child login, not a recursive business-task retry.
+        // It remains available when ordinary popup/back budgets are exhausted.
+        var processor = MaaProcessor.Processors.ToArray().FirstOrDefault(p => context.Tasker.Equals(p.MaaTasker));
+        if (processor == null || Cancelled(context, processor)) return false;
+        try
+        {
+            var overrides = new JObject();
+            foreach (string name in new[] {
+                "GameLoginDispatch", "GameLoginExistingDispatch", "GameLoginExistingReturnDispatch",
+                "GameLoginReconnect", "GameSkipStartupAnimation", "CommonWaitLoading", "GameWaitResourceCheck",
+                "GameCloseGift", "GameCloseAnnouncement", "GameCloseEventSignIn", "GameCloseSignIn",
+                "GameLoginWaitTapScreen"
+            })
+            {
+                // No ordinary recovery branches inside this child: every action
+                // returns to the dispatcher whose first candidate checks the
+                // absolute deadline. Repeated loading never renews that deadline.
+                overrides[name] = new JObject
+                {
+                    ["next"] = new JArray("TkfmRecoveryLoginDispatch"),
+                    ["on_error"] = new JArray("TkfmTaskFailure"), ["timeout"] = 1000
+                };
+            }
+            // These are local login controls, so exhausted ordinary popup
+            // allowances cannot hide a fresh login's announcement or card.
+            // Each attempt gets bounded navigation only; no business quota is reset.
+            foreach (var control in new Dictionary<string, ulong> {
+                ["TkfmRecoveryLoginDispatch"] = 200,
+                ["TkfmRecoveryLoginTapTitle"] = 5, ["TkfmRecoveryLoginCancelExit"] = 3,
+                ["TkfmRecoveryLoginNetworkConfirm"] = 2, ["TkfmRecoveryLoginAdvertisement"] = 3,
+                ["TkfmRecoveryLoginAnnouncement"] = 3, ["TkfmRecoveryLoginEventSignIn"] = 3,
+                ["TkfmRecoveryLoginMonthlyCard"] = 1
+            })
+            {
+                context.GetHitCount(control.Key, out var used);
+                overrides[control.Key] = new JObject { ["max_hit"] = used + control.Value };
+            }
+            bool succeeded = RunAttempt(context, processor, "TkfmRecoveryLoginBegin",
+                new[] { "TkfmRecoveryLoginSucceeded" }, overrides.ToString(Formatting.None));
+            if (!succeeded && !Cancelled(context, processor))
+                processor.AddLog("[异常恢复] 登录接管未能确认主页；保留当前任务账目，交回故障策略处理。", "OrangeRed");
+            return succeeded;
+        }
+        catch (Exception ex)
+        {
+            if (!Cancelled(context, processor))
+                processor.AddLog("[异常恢复] 登录接管异常：" + ex.Message, "OrangeRed");
+            return false;
+        }
+    }
+
     private static JArray NodeList(JToken? value) => value is JArray array
         ? (JArray)array.DeepClone() : value == null || value.Type == JTokenType.Null
             ? new JArray() : new JArray(value.DeepClone());
@@ -329,17 +439,9 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
 
     private static bool IsResponseWait(JObject node)
     {
-        var recognition = node["recognition"]?["param"];
-        string handler = (string)recognition?["custom_recognition"];
-        JToken parameters = recognition?["custom_recognition_param"];
-        if (parameters?.Type == JTokenType.String)
-        {
-            try { parameters = JToken.Parse((string)parameters); }
-            catch (JsonException) { return false; }
-        }
-        string mode = parameters is JObject config ? (string)config["mode"] : null;
-        return (handler == "DailyTaskRewardsResponseState" && (mode == "wait" || mode == "timeout"))
-            || (handler == "DailyCharacterUpgradeState" && (mode == "pending_wait" || mode == "pending_expired"));
+        // Modules declare bookkeeping-only waits themselves. Recovery must not
+        // depend on individual Python handler names or their private mode values.
+        return (bool?)node["attach"]?["recovery_response_wait"] == true;
     }
 
     private static JObject RetryOverride(IMaaContext context, string entry)
@@ -389,6 +491,100 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             // Finish only this login subtask after recognizing Expedition without a known obstruction.
             ["GameMainReady"] = new JObject { ["action"] = new JObject { ["type"] = "DoNothing" }, ["next"] = new JArray() }
         };
+    }
+
+    private static bool LaunchGame(IMaaContext context, MaaProcessor processor)
+    {
+        try
+        {
+            OpenGame(processor, "[启动游戏]", processor.CancellationTokenSource?.Token ?? CancellationToken.None);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (!Cancelled(context, processor)) processor.AddLog("[启动游戏] 第2步失败：" + ex.Message, "OrangeRed");
+            return false;
+        }
+    }
+
+    private static void RequireAdb(string adb, string serial)
+    {
+        if (string.IsNullOrWhiteSpace(serial) || !File.Exists(adb))
+            throw new InvalidOperationException("当前配置缺少有效的 ADB 程序或设备地址，请先选择对应设备");
+    }
+
+    private static void OpenGame(MaaProcessor processor, string label, CancellationToken cancellation)
+    {
+        var device = processor.Config.AdbDevice;
+        string adb = device.AdbPath, serial = device.AdbSerial;
+        RequireAdb(adb, serial);
+        string package = GamePackage(processor);
+        string Shell(params string[] command) => RunCommand(adb, new[] { "-s", serial, "shell" }.Concat(command), cancellation);
+        bool InForeground() => Regex.IsMatch(Shell("dumpsys", "activity", "activities"),
+            @"(?m)^\s*(?:topResumedActivity|mResumedActivity)\b[^\r\n]*?\s" + Regex.Escape(package) + "/");
+
+        processor.AddLog(label + " 第2步：检查并打开游戏 " + package + "。", changeColor: false);
+        if (!InForeground())
+        {
+            string resolved = Shell("cmd", "package", "resolve-activity", "--brief", "-a", "android.intent.action.MAIN",
+                "-c", "android.intent.category.LAUNCHER", package);
+            string activity = Regex.Match(resolved, @"(?m)^" + Regex.Escape(package) + @"/[\w.$]+\s*$").Value.Trim();
+            if (activity.Length == 0)
+                throw new InvalidOperationException("找不到游戏启动入口，请确认所选服务器的游戏已安装。ADB 返回：" + resolved.Trim());
+            string result = Shell("am", "start", "-W", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-n", activity);
+            if (Regex.IsMatch(result, @"(?im)^(?:Error\b|Status:\s*(?!ok\b)\S)"))
+                throw new InvalidOperationException("Android 启动游戏失败：" + result.Trim());
+            var clock = Stopwatch.StartNew();
+            while (!InForeground())
+            {
+                if (clock.Elapsed >= TimeSpan.FromSeconds(20))
+                    throw new InvalidOperationException("已发出启动命令，20 秒内没有看到游戏进入前台。ADB 返回：" + result.Trim());
+                Task.Delay(500, cancellation).GetAwaiter().GetResult();
+            }
+        }
+        processor.AddLog(label + " 第2步完成：" + package + " 已在前台。", changeColor: false);
+    }
+
+    private static string GamePackage(MaaProcessor processor)
+    {
+        string resource = processor.ViewModel?.CurrentResource;
+        return resource == "官服" ? "com.pinkcore.tkfm"
+            : resource == "erolab服务器" ? "com.pinkcore.tkfm.erolabs"
+            : throw new InvalidOperationException("无法确定当前服务器对应的游戏包名：" + resource);
+    }
+
+    private static string RunCommand(string executable, IEnumerable<string> arguments,
+        CancellationToken cancellation)
+    {
+        cancellation.ThrowIfCancellationRequested();
+        var info = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden,
+            RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        foreach (string argument in arguments) info.ArgumentList.Add(argument);
+        using var process = Process.Start(info) ?? throw new InvalidOperationException("无法启动进程：" + executable);
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        string output, error;
+        try
+        {
+            process.WaitForExitAsync(timeout.Token).GetAwaiter().GetResult();
+            output = outputTask.WaitAsync(timeout.Token).GetAwaiter().GetResult();
+            error = errorTask.WaitAsync(timeout.Token).GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException)
+        {
+            try { if (!process.HasExited) process.Kill(); } catch (InvalidOperationException) { }
+            cancellation.ThrowIfCancellationRequested();
+            throw new InvalidOperationException(Path.GetFileName(executable) + " 命令超过 30 秒未返回");
+        }
+        if (process.ExitCode != 0)
+            throw new InvalidOperationException(Path.GetFileName(executable) + " 执行失败（退出码 " + process.ExitCode
+                + "）：" + (string.IsNullOrWhiteSpace(error) ? output : error).Trim());
+        return output;
     }
 
     private static bool EnsureGameRunning(IMaaContext context, MaaProcessor processor)
@@ -503,10 +699,6 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
 internal sealed class TkfmGameOptionsMigration : IDisposable
 {
     private const string MigrationKey = "TkfmGameOptionsV2";
-    private const string ShopMigrationKey = "TkfmShopGroupsV2";
-    private static readonly string[] ShopGroups = {
-        "指定购买物品", "交易所材料", "协会属性石", "协会调教道具", "指定协会商店购买物品"
-    };
     private readonly DispatcherTimer timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly Dictionary<MaaProcessor, JArray> snapshots = new Dictionary<MaaProcessor, JArray>();
 
@@ -528,12 +720,8 @@ internal sealed class TkfmGameOptionsMigration : IDisposable
             {
                 var tasks = snapshots.TryGetValue(processor, out var saved) ? saved
                     : processor.InstanceConfiguration.GetValue("TaskItems", new JArray());
-                if (!processor.InstanceConfiguration.GetValue(ShopMigrationKey, false))
-                    MigrateShopOptions(processor, tasks);
-                if (!processor.InstanceConfiguration.GetValue("TkfmShopDaggerV1", false))
-                    MigrateShopDagger(processor, tasks);
-                if (!processor.InstanceConfiguration.GetValue("TkfmShopCrystalDefaultsV1", false))
-                    MigrateShopCrystalDefaults(processor, tasks);
+                if (!processor.InstanceConfiguration.GetValue("TkfmDailyAffairsOptionsV1", false))
+                    MigrateDailyAffairsOptions(processor);
                 if (processor.InstanceConfiguration.GetValue(MigrationKey, false))
                 {
                     snapshots.Remove(processor);
@@ -554,7 +742,6 @@ internal sealed class TkfmGameOptionsMigration : IDisposable
                     continue;
                 }
                 var rows = processor.ViewModel.TaskItemViewModels;
-                foreach (var row in rows.Where(t => t.InterfaceItem?.Entry == "GameLoginStart").ToArray()) rows.Remove(row);
                 int recruitmentIndex = 0;
                 var oldRecruitments = tasks.OfType<JObject>().Where(t => (string)t["entry"] == "DailyRecruitmentStart").ToArray();
                 foreach (var row in rows.Where(t => t.InterfaceItem?.Entry == "DailyRecruitmentStart"))
@@ -581,9 +768,6 @@ internal sealed class TkfmGameOptionsMigration : IDisposable
                 }
                 processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems,
                     rows.Where(t => !t.IsResourceOptionItem).Select(t => t.InterfaceItem).ToList());
-                var current = processor.InstanceConfiguration.GetValue("CurrentTasks", new List<string>());
-                current.RemoveAll(t => t.EndsWith("<|||>GameLoginStart", StringComparison.Ordinal));
-                processor.InstanceConfiguration.SetValue("CurrentTasks", current);
                 processor.InstanceConfiguration.SetValue(MigrationKey, true);
                 snapshots.Remove(processor);
             }
@@ -591,137 +775,23 @@ internal sealed class TkfmGameOptionsMigration : IDisposable
         }
     }
 
-    private static void MigrateShopDagger(MaaProcessor processor, JArray savedTasks)
+    private static void MigrateDailyAffairsOptions(MaaProcessor processor)
     {
+        var names = new[] { "每日政务战争演习", "每日政务情报搜集", "每日政务商业经营" };
         var definitions = MaaProcessor.Interface?.Option;
-        if (definitions == null || !definitions.TryGetValue("协会调教道具", out var definition)
-            || !definition.Cases.Any(item => item.Name == "匕首"))
-            throw new InvalidOperationException("匕首选项尚未加载");
-        processor.InstanceConfiguration.SetValue("TkfmShopDaggerV1Backup", savedTasks.DeepClone());
-        var previousRows = savedTasks.OfType<JObject>().Where(t => (string)t["entry"] == "DailyShopStart").ToArray();
-        int index = 0;
-        foreach (var row in processor.ViewModel.TaskItemViewModels.Where(t => t.InterfaceItem?.Entry == "DailyShopStart"))
-        {
-            var previous = previousRows.ElementAtOrDefault(index++);
-            var savedGroup = (previous?["option"] as JArray)?.OfType<JObject>()
-                .FirstOrDefault(option => (string)option["name"] == "协会调教道具");
-            if (savedGroup?["selected_cases"] is JArray) continue;
-            var options = row.InterfaceItem.Option ??= new List<MaaInterface.MaaInterfaceSelectOption>();
-            var group = options.FirstOrDefault(option => option.Name == "协会调教道具");
-            if (group == null)
-            {
-                group = new MaaInterface.MaaInterfaceSelectOption
-                {
-                    Name = "协会调教道具", Index = 0, Data = new Dictionary<string, string>(),
-                    SelectedCases = new List<string>()
-                };
-                options.Add(group);
-            }
-            group.SelectedCases ??= new List<string>();
-            if (!group.SelectedCases.Contains("匕首")) group.SelectedCases.Add("匕首");
-            row.InterfaceItem.PipelineOverride?.Remove("__DailyShopGuildDagger");
-        }
-        processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems,
-            processor.ViewModel.TaskItemViewModels.Where(t => !t.IsResourceOptionItem).Select(t => t.InterfaceItem).ToList());
-        processor.InstanceConfiguration.SetValue("TkfmShopDaggerV1", true);
-    }
-
-    private static void MigrateShopCrystalDefaults(MaaProcessor processor, JArray savedTasks)
-    {
-        const string marker = "TkfmShopCrystalDefaultsV1";
-        var targets = new[] {
-            // Newly introduced in 1.5. Flood stone already existed in 1.4;
-            // its changed default applies only to newly created configurations.
-            new[] { "指定协会商店购买物品", "魔晶石", "__DailyShopGuildMagicCrystal" }
-        };
-        var definitions = MaaProcessor.Interface?.Option;
-        foreach (var target in targets)
-            if (definitions == null || !definitions.TryGetValue(target[0], out var definition)
-                || !definition.Cases.Any(item => item.Name == target[1]))
-                throw new InvalidOperationException(target[1] + "选项尚未加载");
-        processor.InstanceConfiguration.SetValue(marker + "Backup", savedTasks.DeepClone());
-        foreach (var row in processor.ViewModel.TaskItemViewModels.Where(t => t.InterfaceItem?.Entry == "DailyShopStart"))
+        if (definitions == null || names.Any(name => !definitions.ContainsKey(name)))
+            throw new InvalidOperationException("每日政务选项尚未加载");
+        foreach (var row in processor.ViewModel.TaskItemViewModels.Where(t =>
+            t.InterfaceItem?.Entry == "DailyStaminaStart" || t.InterfaceItem?.Entry == "CustomStageStart"))
         {
             var options = row.InterfaceItem.Option ??= new List<MaaInterface.MaaInterfaceSelectOption>();
-            foreach (var target in targets)
-            {
-                var group = options.FirstOrDefault(option => option.Name == target[0]);
-                if (group == null)
-                {
-                    group = new MaaInterface.MaaInterfaceSelectOption {
-                        Name = target[0], Index = 0, Data = new Dictionary<string, string>(),
-                        SelectedCases = new List<string>()
-                    };
-                    options.Add(group);
-                }
-                group.SelectedCases ??= new List<string>();
-                if (!group.SelectedCases.Contains(target[1])) group.SelectedCases.Add(target[1]);
-                row.InterfaceItem.PipelineOverride?.Remove(target[2]);
-            }
+            foreach (string name in names)
+                if (!options.Any(option => option.Name == name))
+                    options.Add(new MaaInterface.MaaInterfaceSelectOption { Name = name, Index = 0 });
         }
         processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems,
             processor.ViewModel.TaskItemViewModels.Where(t => !t.IsResourceOptionItem).Select(t => t.InterfaceItem).ToList());
-        processor.InstanceConfiguration.SetValue(marker, true);
-    }
-
-    private static void MigrateShopOptions(MaaProcessor processor, JArray savedTasks)
-    {
-        var definitions = MaaProcessor.Interface?.Option;
-        if (definitions == null || ShopGroups.Any(name => !definitions.ContainsKey(name)))
-            throw new InvalidOperationException("商城分组选项定义尚未加载");
-        // Keep the full original rows inside the instance as a recoverable release backup.
-        processor.InstanceConfiguration.SetValue(ShopMigrationKey + "Backup", savedTasks.DeepClone());
-        var previousRows = savedTasks.OfType<JObject>().Where(t => (string)t["entry"] == "DailyShopStart").ToArray();
-        int index = 0;
-        var groupedNames = new HashSet<string>(ShopGroups.SelectMany(name => new[] { name, name + "仅购买打折商品" }));
-        foreach (var row in processor.ViewModel.TaskItemViewModels.Where(t => t.InterfaceItem?.Entry == "DailyShopStart"))
-        {
-            var previous = previousRows.ElementAtOrDefault(index++);
-            var oldOptions = (previous?["option"] as JArray ?? new JArray()).OfType<JObject>()
-                .Where(o => !string.IsNullOrEmpty((string)o["name"]))
-                .GroupBy(o => (string)o["name"]).ToDictionary(group => group.Key, group => group.First());
-            var options = (row.InterfaceItem.Option ?? new List<MaaInterface.MaaInterfaceSelectOption>())
-                .Where(option => !groupedNames.Contains(option.Name)).ToList();
-            foreach (string group in ShopGroups)
-            {
-                string source = group == "指定购买物品" || group == "交易所材料"
-                    ? "指定购买物品" : "指定协会商店购买物品";
-                var old = oldOptions.TryGetValue(group, out var exact) ? exact
-                    : oldOptions.TryGetValue(source, out var legacy) ? legacy : null;
-                var selected = old?["selected_cases"] is JArray selectedArray
-                    ? new HashSet<string>(selectedArray.Values<string>())
-                    : new HashSet<string>(source == "指定购买物品"
-                        ? new[] { "招募命令", "初级体力药水" } : new[] { "召唤契约" });
-                var definition = definitions[group];
-                options.Add(new MaaInterface.MaaInterfaceSelectOption
-                {
-                    Name = group, Index = 0, Data = new Dictionary<string, string>(),
-                    SelectedCases = definition.Cases.Where(c => selected.Contains(c.Name)).Select(c => c.Name).ToList()
-                });
-                string discount = group + "仅购买打折商品";
-                if (definitions.ContainsKey(discount))
-                    options.Add(oldOptions.TryGetValue(discount, out var oldDiscount)
-                        ? oldDiscount.ToObject<MaaInterface.MaaInterfaceSelectOption>()
-                        : new MaaInterface.MaaInterfaceSelectOption { Name = discount, Index = 0 });
-                foreach (var item in definition.Cases)
-                {
-                    if (item.PipelineOverride == null || row.InterfaceItem.PipelineOverride == null) continue;
-                    foreach (string target in item.PipelineOverride.Keys)
-                    {
-                        if (row.InterfaceItem.PipelineOverride.TryGetValue(target, out var value) && value is JObject cached)
-                        {
-                            cached.Remove("enabled");
-                            if (!cached.HasValues) row.InterfaceItem.PipelineOverride.Remove(target);
-                        }
-                    }
-                }
-            }
-            row.InterfaceItem.PipelineOverride?.Remove("DailyShopGuildOtherPolicy");
-            row.InterfaceItem.Option = options;
-        }
-        processor.InstanceConfiguration.SetValue(ConfigurationKeys.TaskItems,
-            processor.ViewModel.TaskItemViewModels.Where(t => !t.IsResourceOptionItem).Select(t => t.InterfaceItem).ToList());
-        processor.InstanceConfiguration.SetValue(ShopMigrationKey, true);
+        processor.InstanceConfiguration.SetValue("TkfmDailyAffairsOptionsV1", true);
     }
 
     public void Dispose() { timer.Stop(); timer.Tick -= Tick; snapshots.Clear(); }

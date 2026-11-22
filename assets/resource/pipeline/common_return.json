@@ -59,23 +59,25 @@
     },
     "CommonReturnMainFromShop": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "城堡"
+                "template": [
+                    "GameLogin/CastleButton720.png"
                 ],
                 "roi": [
-                    65,
-                    1160,
-                    120,
-                    80
-                ]
+                    50,
+                    1150,
+                    145,
+                    110
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": true
+                "custom_action": "ClickRecognitionCenter",
+                "custom_action_param": {}
             }
         },
         "pre_wait_freezes": 300,
@@ -88,17 +90,18 @@
     },
     "CommonReturnMainFromTaskPage": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "任务"
+                "template": [
+                    "Common/TasksPageTitle720.png"
                 ],
                 "roi": [
                     260,
                     140,
                     200,
                     90
-                ]
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
@@ -153,17 +156,18 @@
     },
     "CommonReturnMainFromAlchemy": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "炼金"
+                "template": [
+                    "DailyAlchemyOrders/Title720.png"
                 ],
                 "roi": [
-                    70,
-                    120,
-                    120,
-                    70
-                ]
+                    65,
+                    110,
+                    190,
+                    85
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
@@ -188,17 +192,18 @@
     },
     "CommonReturnMainFromRecruitOverview": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "全境征才"
+                "template": [
+                    "DailyRecruitment/OverviewTitle720.png"
                 ],
                 "roi": [
                     80,
                     90,
-                    160,
+                    180,
                     80
-                ]
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
@@ -223,19 +228,18 @@
     },
     "CommonReturnMainFromSummon": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "常驻召唤",
-                    "全境征才",
-                    "心愿召唤"
+                "template": [
+                    "DailyRecruitment/FullRegionTab720.png"
                 ],
                 "roi": [
                     0,
                     1120,
                     720,
                     100
-                ]
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
@@ -257,18 +261,11 @@
     },
     "CommonReturnMainFromTrainingDetail": {
         "recognition": {
-            "type": "OCR",
+            "type": "Or",
             "param": {
-                "expected": [
-                    "调教道具",
-                    "通用",
-                    "活动"
-                ],
-                "roi": [
-                    90,
-                    900,
-                    560,
-                    340
+                "any_of": [
+                    "__DailyTrainingCommonSelected",
+                    "__DailyTrainingEventSelected"
                 ]
             }
         },

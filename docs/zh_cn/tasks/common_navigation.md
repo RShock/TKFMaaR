@@ -1,5 +1,7 @@
 # 公共主界面恢复
 
+固定主页导航以设备内部截图的720×1280无损裁剪为准：出征、调教、召唤、商城、底栏城堡均使用TemplateMatch；普通导航恢复默认匹配方法、多数阈值0.85，不使用OCR回退；召唤、调教和自定义出征入口分别按原阈值0.72、0.8、0.82处理。仅此前出现遮罩误判的CommonMainReady及商城入口许可保留method=10001、阈值0.9，使明暗差参与匹配，不将加严参数推广到其他导航。CommonMainReady在同帧命中出征和调教后仍须排除已知弹窗；阈值不是实测准确率，也不保证拒绝所有遮挡。商城、任务页、炼金、征才总览及调教详情的固定返回识别标记同步改实图，保留各页面原返回路线。加载文字、动态数值、语义安全复核及未采到稳定素材的旧页面检查仍保留OCR。
+
 实现文件：`assets/resource/pipeline/common.json`、`assets/resource/pipeline/common_return.json`。
 入口节点：`CommonEnsureMain`；任务结束确认：`CommonStopOnMainWithRetries`。
 
@@ -94,3 +96,5 @@ flowchart TD
 ## 完成状态
 
 - `CommonEnsureMain` 返回父流程；`CommonStopOnMain` 则在主界面识别成功后停止整个任务。
+
+公共广告关闭入口CommonCloseMainGift及兼容节点__CommonGiftTabs复用GameCloseGift的箭头、精选、月卡同帧识图，点击箭头图片中心；不保留页签OCR或固定返回坐标兜底。调教详情的公共返回识别同样改用稳定的选中道具页签。

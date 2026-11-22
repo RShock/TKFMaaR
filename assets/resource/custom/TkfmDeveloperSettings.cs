@@ -13,6 +13,9 @@ using MaaFramework.Binding.Custom;
 using MFAAvalonia.Configuration;
 using MFAAvalonia.Extensions.MaaFW;
 using MFAAvalonia.Helper;
+using MFAAvalonia.ViewModels.Pages;
+using MFAAvalonia.Views.Pages;
+using SukiUI.Controls;
 using MFAAvalonia.ViewModels.UsersControls.Settings;
 using MFAAvalonia.Views.UserControls.Settings;
 
@@ -48,6 +51,7 @@ internal sealed class TkfmDeveloperSettingsService : IDisposable
 
     internal TkfmDeveloperSettingsService()
     {
+        TelemetryService.SetEnabled(false);
         timer.Tick += Refresh;
         timer.Start();
         Refresh(null, EventArgs.Empty);
@@ -67,9 +71,13 @@ internal sealed class TkfmDeveloperSettingsService : IDisposable
             }
             ForceGithubConfiguration();
 
-            var processorNow = MaaProcessorManager.Instance.Current;
             var root = Instances.TopLevel;
-            if (processorNow == null || root == null) return;
+            if (root == null) return;
+            foreach (var view in root.GetVisualDescendants().OfType<AboutUserControl>())
+                ApplyAboutSettings(view);
+
+            var processorNow = MaaProcessorManager.Instance.Current;
+            if (processorNow == null) return;
             foreach (var view in root.GetVisualDescendants().OfType<GameSettingsUserControl>())
                 Install(view, processorNow);
             foreach (var view in root.GetVisualDescendants().OfType<VersionUpdateSettingsUserControl>())
@@ -91,9 +99,9 @@ internal sealed class TkfmDeveloperSettingsService : IDisposable
             ConfigurationManager.Current.SetValue(ConfigurationKeys.EnableCheckVersion, true);
             ConfigurationManager.Current.SetValue(migrationKey, true);
         }
-        // Checking this fork is allowed; unattended installation remains disabled.
+        // Resource updates preserve local user data. Frontend-only updates remain
+        // disabled because this project pins its frontend/native runtime together.
         foreach (string setting in new[] {
-                     ConfigurationKeys.EnableAutoUpdateResource,
                      ConfigurationKeys.EnableAutoUpdateMFA })
             if (ConfigurationManager.Current.GetValue(setting, true))
                 ConfigurationManager.Current.SetValue(setting, false);
@@ -183,7 +191,7 @@ internal sealed class TkfmDeveloperSettingsService : IDisposable
         panel.Children.Add(new TextBlock
         {
             Text = "故障时先关闭已识别的弹窗或点击左上返回按钮，每个任务合计最多两次，保留购买记录及资源额度。仍失败时，"
-                + "“重启”会消耗一次游戏重启额度；“暂停”冻结在当前节点边界，"
+                + "默认重启游戏一次。“暂停”冻结在当前节点边界，"
                 + "点击“继续任务”后本步骤仍记为失败。",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.72
@@ -226,11 +234,24 @@ internal sealed class TkfmDeveloperSettingsService : IDisposable
         return migrated;
     }
 
+    private static void ApplyAboutSettings(AboutUserControl view)
+    {
+        if (view.FindControl<GlassCard>("TutorialCard") is { } tutorial)
+            tutorial.IsVisible = false;
+
+        if (view.DataContext is SettingsViewModel model && model.HelpImproveSoftware)
+            model.HelpImproveSoftware = false;
+
+        // In MFAAvalonia 2.16.2 the telemetry card is the only About card with a switch.
+        foreach (var card in view.GetVisualDescendants().OfType<GlassCard>())
+            if (card.Content is DockPanel row && row.Children.OfType<ToggleSwitch>().Any())
+                card.IsVisible = false;
+    }
+
     private static void ApplyGithubOnly(VersionUpdateSettingsUserControl view)
     {
         if (!(view.DataContext is VersionUpdateSettingsUserControlModel model)) return;
         model.EnableCheckVersion = ConfigurationManager.Current.GetValue(ConfigurationKeys.EnableCheckVersion, true);
-        model.EnableAutoUpdateResource = false;
         model.EnableAutoUpdateMFA = false;
         // MFAAvalonia 2.16.2 declares checking first, followed by the two
         // automatic installation switches. Leave the first native binding intact.
@@ -238,13 +259,15 @@ internal sealed class TkfmDeveloperSettingsService : IDisposable
         for (int index = 0; index < toggles.Length; index++)
         {
             var toggle = toggles[index];
-            if (index > 0) toggle.IsEnabled = false;
+            if (index > 1) toggle.IsEnabled = false;
             ToolTip.SetTip(toggle, index == 0
-                ? "启动时检查 RShock/TKFMaaR 的版本；可自行关闭。发现新版后由你确认下载和安装。"
-                : "自动安装已关闭；请在发现新版后手动确认更新。");
+                ? "启动时检查 RShock/TKFMaaR 的版本；可自行关闭。"
+                : index == 1 ? "自动更新本仓库资源，沿用同一目录中的配置和自定义关卡截图。默认关闭，可自行开启。"
+                : "前端与运行库由本项目完整发布包统一更新，不单独自动更新。");
         }
         if (model.DownloadSourceIndex != 0) model.DownloadSourceIndex = 0;
         if (!string.IsNullOrEmpty(model.CdkPassword)) model.CdkPassword = string.Empty;
+        if (!string.IsNullOrEmpty(model.GitHubToken)) model.GitHubToken = string.Empty;
 
         foreach (var combo in view.GetVisualDescendants().OfType<ComboBox>().ToArray())
         {
@@ -259,10 +282,10 @@ internal sealed class TkfmDeveloperSettingsService : IDisposable
         }
 
         foreach (var label in view.GetVisualDescendants().OfType<TextBlock>()
-                     .Where(text => text.Text == "CDK").ToArray())
+                     .Where(text => text.Text is "CDK" or "Token").ToArray())
         {
-            var mirrorGrid = label.GetVisualAncestors().OfType<Grid>().FirstOrDefault();
-            if (mirrorGrid != null) mirrorGrid.IsVisible = false;
+            var credentialRow = label.GetVisualAncestors().OfType<Grid>().FirstOrDefault();
+            if (credentialRow != null) credentialRow.IsVisible = false;
         }
     }
 

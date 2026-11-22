@@ -1,44 +1,61 @@
 {
     "__CommonMainExpeditionButton": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "roi": [
-                    450,
-                    820,
-                    230,
-                    160
+                "template": [
+                    "Common/MainExpeditionButton720.png"
                 ],
-                "expected": [
-                    "出征"
-                ]
+                "roi": [
+                    480,
+                    820,
+                    240,
+                    210
+                ],
+                "threshold": 0.9,
+                "method": 10001
             }
         }
     },
     "__CommonMainTrainingButton": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
+                "template": [
+                    "Common/MainTrainingButton720.png"
+                ],
                 "roi": [
                     570,
                     1000,
-                    120,
+                    135,
                     110
                 ],
-                "expected": [
-                    "调教"
-                ]
+                "threshold": 0.9,
+                "method": 10001
             }
         }
     },
     "CommonMainReady": {
         "recognition": {
-            "type": "And",
+            "type": "Custom",
             "param": {
-                "all_of": [
-                    "__CommonMainExpeditionButton",
-                    "__CommonMainTrainingButton"
-                ]
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": [
+                        "__CommonMainExpeditionButton",
+                        "__CommonMainTrainingButton"
+                    ],
+                    "absent": [
+                        "TkfmRecoveryReturnTitleTarget",
+                        "TkfmRecoverySessionExpiredTarget",
+                        "TkfmRecoveryBackButtonTarget",
+                        "GameCloseGift",
+                        "GameCloseAnnouncement",
+                        "GameCloseEventSignIn",
+                        "TkfmRecoveryMonthlyCardTarget",
+                        "TkfmRecoveryExitGameTarget"
+                    ]
+                }
             }
         }
     },
@@ -177,19 +194,10 @@
     },
     "__CommonGiftTabs": {
         "recognition": {
-            "type": "OCR",
+            "type": "And",
             "param": {
-                "roi": [
-                    100,
-                    95,
-                    530,
-                    75
-                ],
-                "expected": [
-                    "^限时$",
-                    "^精选$",
-                    "^月卡$",
-                    "^STEP$"
+                "all_of": [
+                    "GameCloseGift"
                 ]
             }
         }
@@ -199,20 +207,22 @@
             "type": "And",
             "param": {
                 "all_of": [
-                    "__CommonGiftTabs"
+                    "GameCloseGift"
                 ]
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": [
-                    40,
-                    75
-                ]
+                "custom_action": "ClickRecognitionCenter",
+                "custom_action_param": {}
             }
         },
-        "pre_wait_freezes": 300,
+        "pre_wait_freezes": {
+            "time": 300,
+            "timeout": 1500,
+            "target": true
+        },
         "max_hit": 3
     }
 }
