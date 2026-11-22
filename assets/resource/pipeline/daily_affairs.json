@@ -1,0 +1,992 @@
+{
+    "__DailyAffairsWarLevel": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/Level60720.png", "roi": [94, 100, 88, 1090], "threshold": 0.94}}
+    },
+    "__DailyAffairsCommerceLevel": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/Level60720.png", "roi": [94, 100, 88, 1090], "threshold": 0.94}}
+    },
+    "__DailyAffairsIntelLevel": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/Level40720.png", "roi": [94, 100, 88, 1090], "threshold": 0.94}}
+    },
+    "__DailyAffairsWarDetailRank": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/RankIV720.png", "roi": [390, 150, 105, 58], "threshold": 0.92}}
+    },
+    "__DailyAffairsCommerceDetailRank": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/RankIV720.png", "roi": [390, 150, 105, 58], "threshold": 0.92}}
+    },
+    "__DailyAffairsIntelDetailRank": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/RankHigh720.png", "roi": [406, 150, 77, 58], "threshold": 0.92}}
+    },
+    "__DailyAffairsWarCategory": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/WarCategory720.png"
+                ],
+                "roi": [
+                    365,
+                    100,
+                    255,
+                    1130
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "__DailyAffairsWarDetail": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/WarDetail720.png"
+                ],
+                "roi": [
+                    215,
+                    145,
+                    295,
+                    65
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsWarStage": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/WarStage720.png"
+                ],
+                "roi": [
+                    155,
+                    150,
+                    275,
+                    1040
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsWarListMarker": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/WarListMarker720.png"
+                ],
+                "roi": [
+                    155,
+                    150,
+                    260,
+                    1040
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "__DailyAffairsWarTicket": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/WarTicket720.png"
+                ],
+                "roi": [
+                    255,
+                    0,
+                    65,
+                    48
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "DailyAffairsWarConfig": {
+        "attach": {
+            "selected": true
+        }
+    },
+    "__DailyAffairsIntelCategory": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/IntelCategory720.png"
+                ],
+                "roi": [
+                    365,
+                    100,
+                    255,
+                    1130
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "__DailyAffairsIntelDetail": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/IntelDetail720.png"
+                ],
+                "roi": [
+                    215,
+                    145,
+                    295,
+                    65
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsIntelStage": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/IntelStage720.png"
+                ],
+                "roi": [
+                    155,
+                    150,
+                    275,
+                    1040
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsIntelListMarker": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/IntelListMarker720.png"
+                ],
+                "roi": [
+                    155,
+                    150,
+                    260,
+                    1040
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "__DailyAffairsIntelTicket": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/IntelTicket720.png"
+                ],
+                "roi": [
+                    255,
+                    0,
+                    65,
+                    48
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "DailyAffairsIntelConfig": {
+        "attach": {
+            "selected": true
+        }
+    },
+    "__DailyAffairsCommerceCategory": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/CommerceCategory720.png"
+                ],
+                "roi": [
+                    365,
+                    100,
+                    255,
+                    1130
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "__DailyAffairsCommerceDetail": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/CommerceDetail720.png"
+                ],
+                "roi": [
+                    215,
+                    145,
+                    295,
+                    65
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsCommerceStage": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/CommerceStage720.png"
+                ],
+                "roi": [
+                    155,
+                    150,
+                    275,
+                    1040
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsCommerceListMarker": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/CommerceListMarker720.png"
+                ],
+                "roi": [
+                    155,
+                    150,
+                    260,
+                    1040
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "__DailyAffairsCommerceTicket": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/CommerceTicket720.png"
+                ],
+                "roi": [
+                    255,
+                    0,
+                    65,
+                    48
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "DailyAffairsCommerceConfig": {
+        "attach": {
+            "selected": true
+        }
+    },
+    "__DailyAffairsSettingsTitle": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/SettingsTitle720.png", "roi": [0, 50, 720, 1100], "threshold": 0.85}}
+    },
+    "__DailyAffairsSettingsClose": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/SettingsClose720.png", "roi": [0, 200, 720, 1080], "threshold": 0.85}}
+    },
+    "__DailyAffairsMaxDiamond": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/MaxDiamond720.png", "roi": [0, 60, 720, 1140], "threshold": 0.85}}
+    },
+    "__DailyAffairsSweepStart": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/SweepStartText720.png", "roi": [0, 100, 720, 1180], "threshold": 0.90}}
+    },
+    "__DailyAffairsOpenSweep": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/OpenSweep720.png", "roi": [0, 0, 720, 1280], "threshold": 0.85}}
+    },
+    "__DailyAffairsResultTitle": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/ResultTitle720.png", "roi": [0, 70, 720, 850], "threshold": 0.85}}
+    },
+    "__DailyAffairsResultDone": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/ResultDone720.png", "roi": [0, 350, 720, 930], "threshold": 0.85}}
+    },
+    "__DailyAffairsWarPreviewIcon": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/WarPreviewIcon720.png", "roi": [0, 0, 720, 1280], "threshold": 0.92}}
+    },
+    "__DailyAffairsIntelPreviewIcon": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/IntelPreviewIcon720.png", "roi": [0, 0, 720, 1280], "threshold": 0.92}}
+    },
+    "__DailyAffairsCommercePreviewIcon": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/CommercePreviewIcon720.png", "roi": [0, 0, 720, 1280], "threshold": 0.92}}
+    },
+    "__DailyAffairsCouponPreviewIcon": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/CouponPreviewIcon720.png", "roi": [0, 0, 720, 1280], "threshold": 0.92}}
+    },
+    "__DailyAffairsStaminaPreviewIcon": {
+        "recognition": {"type": "TemplateMatch", "param": {"template": "DailyAffairs/StaminaPreviewIcon720.png", "roi": [0, 0, 720, 1280], "threshold": 0.92}}
+    },
+    "__DailyAffairsCastle": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/Castle720.png"
+                ],
+                "roi": [
+                    125,
+                    40,
+                    85,
+                    75
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsBack": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/Back720.png"
+                ],
+                "roi": [
+                    0,
+                    40,
+                    130,
+                    75
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsActivitySelected": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/ActivitySelected720.png"
+                ],
+                "roi": [
+                    350,
+                    375,
+                    295,
+                    110
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "__DailyAffairsActivityThumb": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/ActivityThumb720.png"
+                ],
+                "roi": [
+                    70,
+                    650,
+                    560,
+                    115
+                ],
+                "threshold": 0.82
+            }
+        }
+    },
+    "__DailyAffairsEnter": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "DailyAffairs/Enter720.png"
+                ],
+                "roi": [
+                    275,
+                    1090,
+                    175,
+                    110
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsCurrentTab": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": [
+                    "Common/CurrentActivityTab720.png"
+                ],
+                "roi": [
+                    260,
+                    90,
+                    195,
+                    85
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "__DailyAffairsExpedition": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": [
+                    "__CommonMainExpeditionButton"
+                ]
+            }
+        }
+    },
+    "DailyAffairsInitialize": {
+        "recognition": {
+            "type": "DirectHit"
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsInitialize"
+            }
+        }
+    },
+    "DailyAffairsRequired": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "needed"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ]
+    },
+    "DailyAffairsDispatch": {
+        "recognition": {
+            "type": "DirectHit"
+        },
+        "next": [
+            "[JumpBack]CommonWaitLoading",
+            "DailyAffairsHandoff",
+            "DailyAffairsResultDone",
+            "DailyAffairsSettled",
+            "DailyAffairsCloseSweep",
+            "DailyAffairsMaximize",
+            "DailyAffairsSubmit",
+            "DailyAffairsOpenSweep",
+            "DailyAffairsSkip",
+            "DailyAffairsStage",
+            "DailyAffairsCategory",
+            "DailyAffairsEnterAffairs",
+            "DailyAffairsSelectAffairs",
+            "DailyAffairsCurrentTab",
+            "DailyAffairsExpedition",
+            "DailyAffairsReturnHome",
+            "DailyAffairsBack",
+            "DailyAffairsScroll",
+            "DailyAffairsPendingWait"
+        ],
+        "timeout": 20000,
+        "rate_limit": 200,
+        "max_hit": 600
+    },
+    "DailyAffairsHandoff": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "handoff"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "handoff"
+                }
+            }
+        },
+        "next": [
+            "DailyStaminaBattleStartAttempt"
+        ],
+        "post_delay": 250
+    },
+    "DailyAffairsResultDone": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "result_done"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "result_done"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsSettled": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "settled"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "settled"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 250
+    },
+    "DailyAffairsCloseSweep": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "close_sweep"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "close_sweep"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsMaximize": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "maximize"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "maximize"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsSubmit": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "submit"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "submit"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsOpenSweep": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "open_sweep"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "open_sweep"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsSkip": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "skip"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "skip"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 250
+    },
+    "DailyAffairsStage": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "stage"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "stage"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsCategory": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "category"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "category"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsEnterAffairs": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "enter_affairs"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "enter_affairs"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsSelectAffairs": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "select_affairs"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "select_affairs"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsCurrentTab": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "current_tab"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "current_tab"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsExpedition": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "expedition"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "expedition"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsReturnHome": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "return_home"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "return_home"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsBack": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "back"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "back"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 400,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        }
+    },
+    "DailyAffairsScroll": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "scroll"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "scroll"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 250
+    },
+    "DailyAffairsPendingWait": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyAffairsState",
+                "custom_recognition_param": {
+                    "mode": "pending_wait"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyAffairsAction",
+                "custom_action_param": {
+                    "mode": "pending_wait"
+                }
+            }
+        },
+        "next": [
+            "DailyAffairsDispatch"
+        ],
+        "post_delay": 250,
+        "attach": {
+            "recovery_response_wait": true
+        }
+    }
+}

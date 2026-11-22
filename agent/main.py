@@ -17,6 +17,7 @@ import completion  # noqa: F401
 import recovery  # noqa: F401
 import task_rewards  # noqa: F401
 import character_upgrade  # noqa: F401
+import daily_affairs  # noqa: F401
 
 
 def main():

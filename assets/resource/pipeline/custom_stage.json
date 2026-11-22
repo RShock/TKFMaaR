@@ -26,7 +26,8 @@
                 "custom_action": "TkfmRunWithRecovery",
                 "custom_action_param": {
                     "entry": "DailyStaminaStartAttempt",
-                    "label": "自定义关卡"
+                    "label": "自定义关卡",
+                    "initialize": "DailyAffairsInitialize"
                 }
             }
         }
@@ -90,30 +91,13 @@
             "type": "TemplateMatch",
             "param": {
                 "template": [
-                    "Common/MainExpedition720.png"
+                    "Common/MainExpeditionButton720.png"
                 ],
                 "roi": [
                     480,
                     820,
                     240,
                     210
-                ],
-                "threshold": 0.82
-            }
-        }
-    },
-    "CustomStageCurrentActivityTab": {
-        "recognition": {
-            "type": "TemplateMatch",
-            "param": {
-                "template": [
-                    "Common/CurrentActivityTab720.png"
-                ],
-                "roi": [
-                    250,
-                    80,
-                    230,
-                    100
                 ],
                 "threshold": 0.82
             }
@@ -136,15 +120,51 @@
             }
         }
     },
+    "__CustomStageLimitedTabUnderline": {
+        "recognition": {
+            "type": "ColorMatch",
+            "param": {
+                "roi": [
+                    485,
+                    159,
+                    140,
+                    7
+                ],
+                "method": 4,
+                "lower": [
+                    210,
+                    200,
+                    200
+                ],
+                "upper": [
+                    255,
+                    255,
+                    255
+                ],
+                "count": 180,
+                "connected": true
+            }
+        }
+    },
+    "CustomStageLimitedActivitySelected": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": [
+                    "CustomStageLimitedActivityTab",
+                    "__CustomStageLimitedTabUnderline"
+                ],
+                "box_index": 0
+            }
+        }
+    },
     "CustomStageActivityRouter": {
         "next": [
             "[JumpBack]CommonWaitLoading",
             "CustomStageOpenExpedition",
-            "CustomStageOpenTarget",
             "CustomStageOpenEntry",
             "CustomStageOpenLimitedActivities",
-            "CustomStageOpenCurrentActivities",
-            "CustomStageScrollDown"
+            "CustomStageReturnToActivityTab"
         ],
         "timeout": 30000,
         "rate_limit": 1000,
@@ -155,17 +175,28 @@
     },
     "CustomStageOpenExpedition": {
         "recognition": {
-            "type": "And",
+            "type": "Custom",
             "param": {
-                "all_of": [
-                    "CustomStageMainExpedition"
-                ]
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": [
+                        "CustomStageMainExpedition"
+                    ],
+                    "absent": [
+                        "TkfmRecoveryLoginTarget",
+                        "TkfmRecoveryReturnTitleTarget",
+                        "GameCloseGift",
+                        "GameCloseAnnouncement",
+                        "GameCloseEventSignIn",
+                        "TkfmRecoveryMonthlyCardTarget"
+                    ]
+                }
             }
         },
         "action": {
             "type": "Custom",
             "param": {
-                "custom_action": "ClickRecognitionCenter",
+                "custom_action": "CustomStageEnterExpedition",
                 "custom_action_param": {},
                 "target": true
             }
@@ -188,11 +219,23 @@
     },
     "CustomStageOpenEntry": {
         "recognition": {
-            "type": "And",
+            "type": "Custom",
             "param": {
-                "all_of": [
-                    "CustomStageEntryImage"
-                ]
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": [
+                        "CustomStageEntryImage",
+                        "CustomStageLimitedActivitySelected"
+                    ],
+                    "absent": [
+                        "TkfmRecoveryLoginTarget",
+                        "TkfmRecoveryReturnTitleTarget",
+                        "GameCloseGift",
+                        "GameCloseAnnouncement",
+                        "GameCloseEventSignIn",
+                        "TkfmRecoveryMonthlyCardTarget"
+                    ]
+                }
             }
         },
         "action": {
@@ -210,61 +253,41 @@
         },
         "post_delay": 500,
         "next": [
-            "[JumpBack]CommonWaitLoading",
-            "CustomStageActivityRouter"
+            "CustomStageLimitedListRouter"
         ],
         "rate_limit": 1000,
         "max_hit": 3
     },
-    "CustomStageOpenCurrentActivities": {
-        "enabled": false,
-        "recognition": {
-            "type": "And",
-            "param": {
-                "all_of": [
-                    "CustomStageCurrentActivityTab"
-                ]
-            }
-        },
-        "action": {
-            "type": "Custom",
-            "param": {
-                "custom_action": "ClickRecognitionCenter",
-                "custom_action_param": {},
-                "target": true
-            }
-        },
-        "pre_wait_freezes": {
-            "time": 300,
-            "target": true,
-            "timeout": 1000
-        },
-        "post_delay": 500,
-        "next": [
-            "[JumpBack]CommonWaitLoading",
-            "CustomStageActivityRouter"
-        ],
-        "rate_limit": 1000,
-        "max_hit": 6,
-        "focus": {
-            "Node.Action.Succeeded": "自定义关卡：已点击目前活动页签图片中心，继续识别所选活动入口。"
-        }
-    },
     "CustomStageOpenLimitedActivities": {
         "enabled": true,
         "recognition": {
-            "type": "And",
+            "type": "Custom",
             "param": {
-                "all_of": [
-                    "CustomStageLimitedActivityTab"
-                ]
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": [
+                        "CustomStageLimitedActivityTab"
+                    ],
+                    "absent": [
+                        "CustomStageLimitedActivitySelected",
+                        "CustomStageListPage",
+                        "TkfmRecoveryLoginTarget",
+                        "TkfmRecoveryReturnTitleTarget",
+                        "GameCloseGift",
+                        "GameCloseAnnouncement",
+                        "GameCloseEventSignIn",
+                        "TkfmRecoveryMonthlyCardTarget"
+                    ]
+                }
             }
         },
         "action": {
             "type": "Custom",
             "param": {
                 "custom_action": "ClickRecognitionCenter",
-                "custom_action_param": {},
+                "custom_action_param": {
+                    "hold_ms": 150
+                },
                 "target": true
             }
         },
@@ -273,15 +296,15 @@
             "target": true,
             "timeout": 1000
         },
-        "post_delay": 500,
+        "post_delay": 1000,
         "next": [
             "[JumpBack]CommonWaitLoading",
             "CustomStageActivityRouter"
         ],
         "rate_limit": 1000,
-        "max_hit": 6,
+        "max_hit": 3,
         "focus": {
-            "Node.Action.Succeeded": "自定义关卡：已点击限时活动页签图片中心，继续识别所选活动入口。"
+            "Node.Action.Succeeded": "自定义关卡：限时活动尚未选中，已在页签图片中心按压150毫秒；下一轮检查选中标记及活动入口，不以输入成功认定已切页。"
         }
     },
     "CustomStageOpenTarget": {
@@ -345,7 +368,7 @@
         },
         "post_delay": 350,
         "next": [
-            "CustomStageActivityRouter"
+            "CustomStageLimitedListRouter"
         ],
         "rate_limit": 1000,
         "max_hit": 6
@@ -442,5 +465,65 @@
         "on_error": [
             "CustomStageDetailNotFound"
         ]
+    },
+    "CustomStageLimitedListRouter": {
+        "next": [
+            "[JumpBack]CommonWaitLoading",
+            "CustomStageOpenExpedition",
+            "CustomStageOpenTarget",
+            "CustomStageOpenEntry",
+            "CustomStageOpenLimitedActivities",
+            "CustomStageScrollDown"
+        ],
+        "timeout": 30000,
+        "rate_limit": 1000,
+        "max_hit": 30,
+        "on_error": [
+            "CustomStageNavigationNotFound"
+        ]
+    },
+    "__CustomStageListBack": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "Common/TopLeftBack720.png",
+                "roi": [
+                    0,
+                    45,
+                    125,
+                    60
+                ],
+                "threshold": 0.85
+            }
+        }
+    },
+    "CustomStageReturnToActivityTab": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": [
+                    "CustomStageListPage",
+                    "__CustomStageListBack"
+                ],
+                "box_index": 1
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "ClickRecognitionCenter",
+                "custom_action_param": {},
+                "target": true
+            }
+        },
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1000
+        },
+        "next": [
+            "CustomStageActivityRouter"
+        ],
+        "max_hit": 3
     }
 }

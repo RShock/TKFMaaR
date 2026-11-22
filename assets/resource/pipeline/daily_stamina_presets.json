@@ -12,17 +12,18 @@
     },
     "DailyStaminaPresetActivitySection": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "限时活动"
+                "template": [
+                    "Common/LimitedActivityTab720.png"
                 ],
                 "roi": [
                     480,
                     90,
                     150,
                     80
-                ]
+                ],
+                "threshold": 0.85
             }
         }
     },

@@ -15,11 +15,16 @@ templates:
 
 activities:
   - name: "日常调教本"
-    description: "出征 → 目前活动 → 每日政务（图片）→ 调教 → 开发IV → 开始，随后再次挑战；仅匹配固定短文字，适配每日变化的属性，单次消耗15体力。"
     template: daily_affairs_list
     activity_section:
       expected: ["目前活动"]
       roi: [270, 90, 180, 80]
+      recognition:
+        type: TemplateMatch
+        param:
+          template: "Common/CurrentActivityTab720.png"
+          roi: [260, 90, 195, 85]
+          threshold: 0.85
     activity_name:
       expected: ["日常政务"]
       recognition:

@@ -9,16 +9,21 @@
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": true
+                "custom_action": "ClickRecognitionCenter",
+                "custom_action_param": {}
             }
         },
         "next": [
             "[JumpBack]CommonWaitLoading",
             "DailyStaminaRouteActivityListFindSelected"
         ],
-        "pre_wait_freezes": 300,
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        },
         "post_delay": 500,
         "timeout": 3000,
         "on_error": [

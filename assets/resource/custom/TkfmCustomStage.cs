@@ -13,6 +13,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using MaaFramework.Binding;
+using MaaFramework.Binding.Buffers;
 using MaaFramework.Binding.Custom;
 using MFAAvalonia.Configuration;
 using MFAAvalonia.Extensions.MaaFW;
@@ -87,7 +88,12 @@ public sealed class TkfmCustomStage : IMaaCustomAction
             if (cost < 1 || cost > 999) throw new InvalidOperationException("请填写关卡每次消耗的体力（1-999）");
             var overrides = new JObject
             {
+                // Let the custom router observe the real starting page directly.
+                // Every home re-entry uses its guarded action and renews tab navigation only.
+                // Daily affairs remains the common prelude, including for saved custom profiles.
+                ["DailyStaminaBattleStartAttempt"] = new JObject { ["next"] = new JArray("CustomStageActivityRouter") },
                 ["DailyStaminaPresetRouteStart"] = new JObject { ["next"] = new JArray("CustomStageActivityRouter") },
+                ["CustomStageOpenLimitedActivities"] = new JObject { ["enabled"] = true },
                 ["CustomStageEntryImage"] = ImageRecognition(entry, new JArray(0, 160, 720, 1000)),
                 ["CustomStageTargetImage"] = ImageRecognition(stage, new JArray(0, 160, 720, 1000)),
                 ["CustomStageListPage"] = ImageRecognition(page, new JArray(50, 60, 600, 80)),
@@ -212,8 +218,8 @@ public sealed class TkfmCustomStage : IMaaCustomAction
     {
         if (string.IsNullOrWhiteSpace(relative) || Path.IsPathRooted(relative))
             throw new InvalidOperationException("入口或关卡截图尚未设置，请重新截取并保存配置");
-        string folder = Path.GetFullPath(Path.Combine(resource, "image", "UserStages")) + Path.DirectorySeparatorChar;
-        string path = Path.GetFullPath(Path.Combine(resource, "image", relative));
+        string folder = Path.GetFullPath(Path.Combine(UserResourceRoot, "image", "UserStages")) + Path.DirectorySeparatorChar;
+        string path = Path.GetFullPath(Path.Combine(UserResourceRoot, "image", relative));
         if (!path.StartsWith(folder, StringComparison.OrdinalIgnoreCase) || !File.Exists(path))
             throw new InvalidOperationException("配置截图缺失，请重新截取并保存配置");
         using (var bitmap = SKBitmap.Decode(path))
@@ -221,6 +227,8 @@ public sealed class TkfmCustomStage : IMaaCustomAction
                 throw new InvalidOperationException("配置截图损坏或大小无效，请重新截取");
         return relative.Replace('\\', '/');
     }
+
+    internal static string UserResourceRoot => Path.Combine(AppContext.BaseDirectory, "userdata", "resource");
 
     internal static byte[] Crop(byte[] png, int x, int y, int width, int height)
     {
@@ -257,6 +265,9 @@ internal sealed class CustomStageSelectRow
 
 internal sealed class CustomStageUI : IDisposable
 {
+    private static bool TaskListBusy() =>
+        (AppDomain.CurrentDomain.GetData("TKFMaa.TaskListGuard.IsBusy") as Func<bool>)?.Invoke() == true;
+
     internal const string CaseName = "__TKFM_CUSTOM_STAGE__";
     private readonly DispatcherTimer timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
     private readonly Dictionary<TaskQueueViewModel, Action<DragItemViewModel, bool>> subscriptions =
@@ -355,7 +366,7 @@ internal sealed class CustomStageUI : IDisposable
 
     private void Tick(object sender, EventArgs args)
     {
-        if (disposed || Instances.TopLevel == null || MaaProcessor.Interface?.Option == null
+        if (disposed || Instances.TopLevel == null || TaskListBusy() || MaaProcessor.Interface?.Option == null
             || !MaaProcessor.Interface.Option.TryGetValue("体力消耗关卡", out var definition) || definition.Cases == null) return;
         int customIndex = definition.Cases.FindIndex(c => c.Name == CaseName);
         if (customIndex < 0) return;
@@ -555,7 +566,6 @@ internal sealed class CustomStageEditor : Window
         var config = TkfmCustomStage.ReadConfig(processor);
         foreach (var item in (config["profiles"] as JArray ?? new JArray()).OfType<JObject>())
             drafts.Add(new CustomStageDraft((JObject)item.DeepClone()));
-        form.Children.Add(new TextBlock { Text = "命名配置", FontSize = 20 });
         form.Children.Add(new TextBlock { Text = "运行中也可编辑和保存。关卡选择下次启动队列生效；已保存配置的图片和体力消耗在该步骤开始时读取，当前正在执行的步骤保持原值。切换配置保留本窗口编辑，关闭窗口放弃未保存的修改。",
             TextWrapping = TextWrapping.Wrap });
         form.Children.Add(choices);
@@ -574,18 +584,29 @@ internal sealed class CustomStageEditor : Window
         form.Children.Add(stagePreview);
         form.Children.Add(new TextBlock
         {
-            Text = "先在消耗体力的“活动页签”下拉框选择“限时活动”或“每日活动”。入口须位于所选页签，并进入纵向关卡列表；两张用户截图之间不自动处理额外分类或地图路线。请框选包含名称的稳定区域，避开倒计时、体力数值和动画。",
+            Text = "请在“限时活动”里选择一个打开后直接显示纵向关卡列表的活动。截图时框选活动或关卡名称，避开倒计时、体力数值和动画。",
             TextWrapping = TextWrapping.Wrap
         });
-        var body = new Grid { RowDefinitions = new RowDefinitions("*,Auto,Auto"), Margin = new Thickness(20) };
+        var body = new Grid { RowDefinitions = new RowDefinitions("Auto,*,Auto,Auto"), Margin = new Thickness(20) };
+        var header = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+        var close = new Button { Content = "×", MinWidth = 36, MinHeight = 32, FontSize = 20 };
+        Avalonia.Automation.AutomationProperties.SetName(close, "不保存并退出");
+        close.Click += (_, __) => Close();
+        DockPanel.SetDock(close, Dock.Right);
+        header.Children.Add(close);
+        header.Children.Add(new TextBlock
+        {
+            Text = "自定义关卡设置", FontSize = 20, VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center
+        });
+        body.Children.Add(header);
         var scroll = new ScrollViewer { Content = form };
-        body.Children.Add(scroll);
-        Grid.SetRow(status, 1); status.Margin = new Thickness(0, 10); body.Children.Add(status);
+        Grid.SetRow(scroll, 1); body.Children.Add(scroll);
+        Grid.SetRow(status, 2); status.Margin = new Thickness(0, 10); body.Children.Add(status);
         var save = Button("保存并使用此关卡", Save);
         var exit = Button("不保存并退出", () => Close());
         var footer = new WrapPanel();
         footer.Children.Add(save); footer.Children.Add(exit);
-        Grid.SetRow(footer, 2); body.Children.Add(footer);
+        Grid.SetRow(footer, 3); body.Children.Add(footer);
         Content = body;
         KeyDown += (_, e) =>
         {
@@ -663,7 +684,7 @@ internal sealed class CustomStageEditor : Window
         if (bytes != null) return bytes;
         string relative = (string)draft.Data[stage ? "stage" : "entry"];
         return string.IsNullOrWhiteSpace(relative) ? null
-            : File.ReadAllBytes(Path.Combine(resource, "image", TkfmCustomStage.TemplatePath(resource, relative)));
+            : File.ReadAllBytes(Path.Combine(TkfmCustomStage.UserResourceRoot, "image", TkfmCustomStage.TemplatePath(resource, relative)));
     }
 
     private static void SetPreview(Image view, byte[] png)
@@ -725,7 +746,7 @@ internal sealed class CustomStageEditor : Window
         try
         {
             Remember();
-            var window = new CustomStageCapture(processor, stage);
+            var window = new CustomStageCapture(processor, resource, stage);
             capture = window;
             var result = await window.ShowDialog<CustomStageSelection>(this);
             if (closed || result == null || TkfmCustomStage.EditingBlocked(processor)) return;
@@ -774,7 +795,7 @@ internal sealed class CustomStageEditor : Window
                 {
                     if (pair.Bytes == null) continue;
                     string relative = revision + "/" + pair.Key + ".png";
-                    string path = Path.Combine(resource, "image", relative);
+                    string path = Path.Combine(TkfmCustomStage.UserResourceRoot, "image", relative);
                     Directory.CreateDirectory(Path.GetDirectoryName(path));
                     File.WriteAllBytes(path, pair.Bytes);
                     item[pair.Key] = relative;
@@ -826,22 +847,22 @@ internal sealed class CustomStageCapture : Window
     private readonly CancellationTokenSource cancellation = new CancellationTokenSource();
     private byte[] frame;
     private Point start;
-    private bool frozen, dragging, fetching, closed;
+    private bool frozen, canSelect, dragging, fetching, closed;
     private int left, top, width, height;
 
-    internal CustomStageCapture(MaaProcessor processor, bool stage)
+    internal CustomStageCapture(MaaProcessor processor, string resource, bool stage)
     {
         this.processor = processor; this.stage = stage;
         Title = stage ? "设置关卡截图 · 实时画面" : "设置活动入口截图 · 实时画面";
         Width = 540; Height = 850; MinWidth = 390; MinHeight = 500;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         hint.Text = stage
-            ? "本窗口复用助手右侧实时画面。请在游戏中进入目标活动的关卡列表，找到要打的关卡；点击“截取”后拖框选择该关卡的名称或稳定图案。"
-            : "本窗口复用助手右侧实时画面。请先在任务中选好“活动页签”，再在游戏中切到对应页签的活动封面列表；点击“截取”后拖框选择要打的活动。";
+            ? "在游戏中打开刚选的限时活动，找到目标关卡。点击“截取”，再框选关卡名称。"
+            : "在游戏中打开“出征 → 限时活动”。点击“截取”，再框选目标活动。";
         canvas.Children.Add(image); canvas.Children.Add(selection);
         canvas.PointerPressed += (_, e) =>
         {
-            if (!frozen || !e.GetCurrentPoint(canvas).Properties.IsLeftButtonPressed) return;
+            if (!canSelect || !e.GetCurrentPoint(canvas).Properties.IsLeftButtonPressed) return;
             start = Clamp(e.GetPosition(canvas)); dragging = true;
             e.Pointer.Capture(canvas); UpdateSelection(start); e.Handled = true;
         };
@@ -856,10 +877,33 @@ internal sealed class CustomStageCapture : Window
                 : "请框选至少16×16像素的活动或关卡，避开顶部菜单和底部导航；可先在游戏中滚动到列表中部再截取。";
         };
         canvas.PointerCaptureLost += (_, __) => dragging = false;
-        freeze.Click += (_, __) =>
+        freeze.Click += async (_, __) =>
         {
             if (frame == null || fetching || closed) return;
             frozen = true; timer.Stop(); freeze.IsEnabled = false;
+            if (!stage)
+            {
+                refresh.IsEnabled = false;
+                try
+                {
+                    byte[] candidate = frame;
+                    bool isLimited = await Task.Run(() => IsLimitedActivityFrame(resource, candidate), cancellation.Token);
+                    if (closed) return;
+                    if (!isLimited)
+                    {
+                        message.Text = "请先在游戏中打开“限时活动”，再点击“刷新 / 重新截取”。";
+                        return;
+                    }
+                }
+                catch (OperationCanceledException) { return; }
+                catch (Exception ex)
+                {
+                    if (!closed) message.Text = "无法确认限时活动页面：" + ex.Message;
+                    return;
+                }
+                finally { if (!closed) refresh.IsEnabled = true; }
+            }
+            canSelect = true;
             hint.Text = stage ? "拖框选择要打的关卡，建议包含完整关卡名，避开星级、倒计时和动画。"
                 : "拖框选择要打的活动，建议包含稳定标题或独特图案，避开倒计时和动画。";
             message.Text = "画面已冻结。按住鼠标左键并拖动，框选需要识别的图片。";
@@ -867,7 +911,7 @@ internal sealed class CustomStageCapture : Window
         refresh.Click += async (_, __) =>
         {
             if (closed || fetching) return;
-            frozen = false; dragging = false; selection.IsVisible = false; confirm.IsEnabled = false;
+            frozen = false; canSelect = false; dragging = false; selection.IsVisible = false; confirm.IsEnabled = false;
             await RefreshFrame(); if (!closed && !frozen && frame != null) timer.Start();
         };
         confirm.Click += (_, __) =>
@@ -975,6 +1019,34 @@ internal sealed class CustomStageCapture : Window
                 using (var data = image.Encode(SKEncodedImageFormat.Png, 100)) return data.ToArray();
             }
         }
+    }
+
+    private static bool IsLimitedActivityFrame(string resourcePath, byte[] frame)
+    {
+        // Match the frozen cache frame with the same nodes as runtime navigation.
+        // A separate tasker has no controller and cannot queue device actions.
+        var nodes = JObject.Parse(File.ReadAllText(Path.Combine(resourcePath, "pipeline", "custom_stage.json")));
+        using var resource = new MaaResource();
+        if (resource.AppendImage(Path.Combine(resourcePath, "image")).Wait() != MaaJobStatus.Succeeded)
+            throw new InvalidOperationException("无法读取活动页签图片");
+        using var tasker = new MaaTasker(MaaController.Null, resource, DisposeOptions.None);
+        using var image = new MaaImageBuffer();
+        if (!image.TrySetEncodedData(frame)) throw new InvalidOperationException("截图无效");
+        foreach (var node in nodes["CustomStageLimitedActivitySelected"]["recognition"]["param"]["all_of"])
+        {
+            var recognition = nodes[(string)node]["recognition"];
+            var job = tasker.AppendRecognition((string)recognition["type"],
+                recognition["param"].ToString(Formatting.None), image);
+            if (job.Wait() != MaaJobStatus.Succeeded) return false;
+            if (!tasker.GetTaskDetail(job.Id, out _, out var nodeIds, out _) || nodeIds.Length != 1
+                || !tasker.GetNodeDetail(nodeIds[0], out _, out var recognitionId, out _, out _)) return false;
+            using var box = new MaaRectBuffer();
+            using var raw = new MaaImageBuffer();
+            using var draws = new MaaImageListBuffer();
+            if (!tasker.GetRecognitionDetail(recognitionId, out _, out _, out var hit, box, out _, raw, draws)
+                || !hit) return false;
+        }
+        return true;
     }
 
     private static byte[] ReadLiveView(MaaProcessor processor)

@@ -9,19 +9,18 @@
                 "custom_action": "TkfmRunWithRecovery",
                 "custom_action_param": {
                     "entry": "DailyStaminaStartAttempt",
-                    "label": "消耗体力"
+                    "label": "消耗体力",
+                    "initialize": "DailyAffairsInitialize"
                 }
             }
         }
     },
     "DailyStaminaStartAttempt": {
         "next": [
-            "[JumpBack]CommonWaitLoading",
-            "[JumpBack]CommonCloseMainGift",
-            "DailyStaminaOpenExpeditionFromMain",
-            "[JumpBack]CommonEnsureMain"
+            "DailyAffairsRequired",
+            "DailyStaminaBattleStartAttempt"
         ],
-        "timeout": 10000
+        "timeout": 20000
     },
     "DailyStaminaOpenExpeditionFromMain": {
         "recognition": {
@@ -314,12 +313,9 @@
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": [
-                    575,
-                    1148
-                ]
+                "custom_action": "ClickRecognitionCenter"
             }
         },
         "post_wait_freezes": {
@@ -345,34 +341,24 @@
     },
     "__DailyStaminaSweepButton": {
         "recognition": {
-            "type": "OCR",
+            "type": "And",
             "param": {
-                "expected": [
-                    "军团扫荡"
+                "all_of": [
+                    "__DailyAffairsOpenSweep"
                 ],
-                "roi": [
-                    500,
-                    1110,
-                    170,
-                    80
-                ]
+                "box_index": 0
             }
         }
     },
     "DailyStaminaSweepDialog": {
         "enabled": false,
         "recognition": {
-            "type": "OCR",
+            "type": "And",
             "param": {
-                "expected": [
-                    "自动扫荡设置"
+                "all_of": [
+                    "__DailyAffairsSettingsTitle"
                 ],
-                "roi": [
-                    250,
-                    420,
-                    230,
-                    80
-                ]
+                "box_index": 0
             }
         },
         "next": [
@@ -387,25 +373,18 @@
     "DailyStaminaClickSweepMax": {
         "enabled": false,
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "And",
             "param": {
-                "template": "DailyStamina/SweepMaxButton.png",
-                "roi": [
-                    560,
-                    520,
-                    80,
-                    90
+                "all_of": [
+                    "__DailyAffairsMaxDiamond"
                 ],
-                "threshold": 0.7
+                "box_index": 0
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": [
-                    600,
-                    565
-                ]
+                "custom_action": "ClickRecognitionCenter"
             }
         },
         "post_wait_freezes": {
@@ -426,26 +405,18 @@
     "DailyStaminaStartSweep": {
         "enabled": false,
         "recognition": {
-            "type": "OCR",
+            "type": "And",
             "param": {
-                "expected": [
-                    "扫荡开始"
+                "all_of": [
+                    "__DailyAffairsSweepStart"
                 ],
-                "roi": [
-                    390,
-                    760,
-                    220,
-                    90
-                ]
+                "box_index": 0
             }
         },
         "action": {
-            "type": "Click",
+            "type": "Custom",
             "param": {
-                "target": [
-                    500,
-                    805
-                ]
+                "custom_action": "ClickRecognitionCenter"
             }
         },
         "post_delay": 300,
@@ -1463,5 +1434,14 @@
                 ]
             }
         }
+    },
+    "DailyStaminaBattleStartAttempt": {
+        "next": [
+            "[JumpBack]CommonWaitLoading",
+            "[JumpBack]CommonCloseMainGift",
+            "DailyStaminaOpenExpeditionFromMain",
+            "[JumpBack]CommonEnsureMain"
+        ],
+        "timeout": 10000
     }
 }

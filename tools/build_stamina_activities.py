@@ -354,7 +354,11 @@ def build_override(resolved):
             "next": ["DailyStaminaRouteActivitySectionStart"]
         },
         "DailyStaminaPresetActivitySection": {
-            "recognition": ocr_recognition(resolved["activity_section"])
+            "recognition": (
+                copy.deepcopy(resolved["activity_section"]["recognition"])
+                if resolved["activity_section"].get("recognition")
+                else ocr_recognition(resolved["activity_section"])
+            )
         },
         "DailyStaminaPresetInnerRouteStart": {
             "recognition": reference_recognition(
@@ -448,21 +452,19 @@ def build_override(resolved):
 def build_cases(config):
     config = expand_activity_groups(config)
     validate_config(config)
-    cases = [
-        {
-            "name": activity["name"],
-            "description": activity.get("description", ""),
-            "pipeline_override": build_override(resolve_activity(config, activity)),
-        }
-        for activity in config["activities"]
-    ]
+    cases = []
+    for activity in config["activities"]:
+        case = {"name": activity["name"]}
+        if activity.get("description"):
+            case["description"] = activity["description"]
+        case["pipeline_override"] = build_override(resolve_activity(config, activity))
+        cases.append(case)
     # One stable storage slot for instance-local profiles. The frontend extension
     # expands it into named choices in the existing stamina select control.
     cases.append(
         {
             "name": "__TKFM_CUSTOM_STAGE__",
             "label": "自定义关卡（连接设备后选择或添加）",
-            "description": "在消耗体力的关卡下拉框内选择或添加自定义截图关卡。",
             "pipeline_override": {
                 "DailyStaminaStart": {
                     "recognition": {"type": "DirectHit"},

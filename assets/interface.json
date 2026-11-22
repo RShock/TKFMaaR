@@ -104,18 +104,18 @@
             "entry": "DailyStaminaStart",
             "option": [
                 "体力消耗关卡",
-                "活动页签",
                 "使用扫荡券",
                 "扫荡不足时手动补刷",
                 "体力不足时使用体力药",
-                "体力不足时购买体力"
+                "体力不足时购买体力",
+                "每日政务战争演习",
+                "每日政务情报搜集",
+                "每日政务商业经营"
             ],
             "doc": [
-                "在“体力消耗关卡”下拉框选择日常调教本或已保存的自定义关卡；下拉框末尾“添加自定义关卡…”可录制活动入口和关卡图片。",
-                "“活动页签”默认限时活动，也可切换为每日活动；两项都使用图片识别页签，不使用OCR。",
-                "连接设备并加载资源扩展后，当前步骤提供“管理自定义关卡”，支持多份命名配置，保存后直接选入当前消耗体力步骤。",
-                "自定义路线以低频无状态循环同时识别出征、所选活动页签、活动入口图片和关卡图片，命中哪个点哪个；可从主页、活动页或关卡列表开始，关卡列表向下最多寻找6次，进入后复用扫荡或直接战斗和现有体力恢复选项。",
-                "“使用扫荡券”默认不勾选，使用普通战斗和再次挑战；勾选后优先军团扫荡最大次数，扫荡不足时按“扫荡不足时手动补刷”决定是否继续普通战斗。战斗AUTO须预先开启。"
+                "先扫荡已勾选的每日政务项目，每项最多 3 次。门票、体力或扫荡券不足以扫荡一次时跳过，再刷所选关卡。",
+                "刷限时活动时，连接设备后在“体力消耗关卡”里选择“添加自定义关卡…”，保存活动入口和关卡截图。",
+                "需要普通战斗时，请先在游戏里编好队伍并开启自动战斗（AUTO）。"
             ]
         },
         {
@@ -159,7 +159,6 @@
             "cases": [
                 {
                     "name": "日常调教本",
-                    "description": "出征 → 目前活动 → 每日政务（图片）→ 调教 → 开发IV → 开始，随后再次挑战；仅匹配固定短文字，适配每日变化的属性，单次消耗15体力。",
                     "pipeline_override": {
                         "DailyStaminaPresetRouteStart": {
                             "next": [
@@ -168,17 +167,16 @@
                         },
                         "DailyStaminaPresetActivitySection": {
                             "recognition": {
-                                "type": "OCR",
+                                "type": "TemplateMatch",
                                 "param": {
-                                    "expected": [
-                                        "目前活动"
-                                    ],
+                                    "template": "Common/CurrentActivityTab720.png",
                                     "roi": [
-                                        270,
+                                        260,
                                         90,
-                                        180,
-                                        80
-                                    ]
+                                        195,
+                                        85
+                                    ],
+                                    "threshold": 0.85
                                 }
                             }
                         },
@@ -382,7 +380,6 @@
                 {
                     "name": "__TKFM_CUSTOM_STAGE__",
                     "label": "自定义关卡（连接设备后选择或添加）",
-                    "description": "在消耗体力的关卡下拉框内选择或添加自定义截图关卡。",
                     "pipeline_override": {
                         "DailyStaminaStart": {
                             "recognition": {
@@ -400,43 +397,12 @@
                 }
             ]
         },
-        "活动页签": {
-            "type": "select",
-            "default_case": "限时活动",
-            "cases": [
-                {
-                    "name": "限时活动",
-                    "description": "无状态路由识别并点击“限时活动”页签，再从该页签的活动入口截图继续。",
-                    "pipeline_override": {
-                        "CustomStageOpenLimitedActivities": {
-                            "enabled": true
-                        },
-                        "CustomStageOpenCurrentActivities": {
-                            "enabled": false
-                        }
-                    }
-                },
-                {
-                    "name": "每日活动",
-                    "description": "无状态路由识别并点击“目前活动”（界面选项称每日活动）页签，再从该页签的活动入口截图继续。",
-                    "pipeline_override": {
-                        "CustomStageOpenLimitedActivities": {
-                            "enabled": false
-                        },
-                        "CustomStageOpenCurrentActivities": {
-                            "enabled": true
-                        }
-                    }
-                }
-            ]
-        },
         "使用扫荡券": {
             "type": "switch",
             "default_case": "No",
             "cases": [
                 {
                     "name": "Yes",
-                    "description": "优先使用扫荡券进行军团扫荡；不足时是否普通战斗由“扫荡不足时手动补刷”决定。仅提供开始按钮的关卡仍使用普通战斗。",
                     "pipeline_override": {
                         "DailyStaminaStageDetailModeDecision": {
                             "next": [
@@ -463,7 +429,6 @@
                 },
                 {
                     "name": "No",
-                    "description": "不使用扫荡券，直接普通战斗并再次挑战；不受“扫荡不足时手动补刷”开关限制。",
                     "pipeline_override": {
                         "DailyStaminaStageDetailModeDecision": {
                             "next": [
@@ -492,7 +457,6 @@
             "cases": [
                 {
                     "name": "Yes",
-                    "description": "仅勾选“使用扫荡券”时生效：扫荡券不足或扫荡后仍有足够体力时，继续使用开始/再次挑战手动补刷。",
                     "pipeline_override": {
                         "DailyStaminaManualStart": {
                             "enabled": true
@@ -501,14 +465,14 @@
                 },
                 {
                     "name": "No",
-                    "description": "仅勾选“使用扫荡券”时生效：扫荡不可用或扫荡后仍有体力也返回主界面停止。未勾选使用扫荡券时仍正常战斗。",
                     "pipeline_override": {
                         "DailyStaminaManualStart": {
                             "enabled": false
                         }
                     }
                 }
-            ]
+            ],
+            "description": "同时勾选“使用扫荡券”才生效。"
         },
         "体力不足时使用体力药": {
             "type": "switch",
@@ -516,7 +480,6 @@
             "cases": [
                 {
                     "name": "Yes",
-                    "description": "体力不足时按临期顺序逐瓶使用体力药，补足后继续，单次任务最多使用 10 瓶。",
                     "pipeline_override": {
                         "DailyStaminaRefillWithPotionWhenLow": {
                             "enabled": true
@@ -540,7 +503,6 @@
                 },
                 {
                     "name": "No",
-                    "description": "不自动使用体力药。",
                     "pipeline_override": {
                         "DailyStaminaRefillWithPotionWhenLow": {
                             "enabled": false
@@ -562,7 +524,8 @@
                         }
                     }
                 }
-            ]
+            ],
+            "description": "首次挑战所选关卡前，体力不够打一场时会用药。每次用 1 瓶，喝完还不够就再用，最多 10 瓶。开始刷关后，体力不足就结束。"
         },
         "体力不足时购买体力": {
             "type": "switch",
@@ -570,7 +533,6 @@
             "cases": [
                 {
                     "name": "Yes",
-                    "description": "体力不足且出现魔晶石兑换提示时，按弹窗当前价格购买一次体力并继续当前流程。",
                     "pipeline_override": {
                         "DailyStaminaRefillWithCurrencyWhenLow": {
                             "enabled": true
@@ -594,7 +556,6 @@
                 },
                 {
                     "name": "No",
-                    "description": "不自动消耗魔晶石购买体力。",
                     "pipeline_override": {
                         "DailyStaminaRefillWithCurrencyWhenLow": {
                             "enabled": false
@@ -616,7 +577,8 @@
                         }
                     }
                 }
-            ]
+            ],
+            "description": "首次挑战所选关卡前，体力不足时可按游戏显示的价格花费魔晶石购买体力，每次任务最多购买 1 次。"
         },
         "全境征才循环次数": {
             "type": "input",
@@ -1476,6 +1438,87 @@
                     "default": "17:30",
                     "verify": "^\\s*(?:[01]\\d|2[0-3]):[0-5]\\d(?:\\s*[,，]\\s*(?:[01]\\d|2[0-3]):[0-5]\\d)*\\s*$",
                     "pattern_msg": "请输入 24 小时制时间，例如 17:30。多个时间用逗号隔开。"
+                }
+            ]
+        },
+        "每日政务战争演习": {
+            "type": "switch",
+            "label": "扫荡战争演习",
+            "default_case": "Yes",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "pipeline_override": {
+                        "DailyAffairsWarConfig": {
+                            "attach": {
+                                "selected": true
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "No",
+                    "pipeline_override": {
+                        "DailyAffairsWarConfig": {
+                            "attach": {
+                                "selected": false
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "每日政务情报搜集": {
+            "type": "switch",
+            "label": "扫荡情报搜集",
+            "default_case": "Yes",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "pipeline_override": {
+                        "DailyAffairsIntelConfig": {
+                            "attach": {
+                                "selected": true
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "No",
+                    "pipeline_override": {
+                        "DailyAffairsIntelConfig": {
+                            "attach": {
+                                "selected": false
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "每日政务商业经营": {
+            "type": "switch",
+            "label": "扫荡商业经营",
+            "default_case": "Yes",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "pipeline_override": {
+                        "DailyAffairsCommerceConfig": {
+                            "attach": {
+                                "selected": true
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "No",
+                    "pipeline_override": {
+                        "DailyAffairsCommerceConfig": {
+                            "attach": {
+                                "selected": false
+                            }
+                        }
+                    }
                 }
             ]
         }
