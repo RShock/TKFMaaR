@@ -27,6 +27,7 @@
             "DailyRecruitmentSlot3CountLeader",
             "DailyRecruitmentSlot4CountRecruit",
             "DailyRecruitmentSlot4CountLeader",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentCollectSkip",
             "DailyRecruitmentCollectClose",
             "DailyRecruitmentCollectResumeCycle",
@@ -47,12 +48,14 @@
         "recognition": {
             "type": "TemplateMatch",
             "param": {
-                "template": "DailyRecruitment/SummonText.png",
+                "template": [
+                    "Common/MainSummonButton720.png"
+                ],
                 "roi": [
                     390,
                     980,
-                    170,
-                    130
+                    180,
+                    135
                 ],
                 "threshold": 0.72
             }
@@ -88,17 +91,18 @@
     },
     "DailyRecruitmentOpenFullRegion": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
+                "template": [
+                    "DailyRecruitment/FullRegionTab720.png"
+                ],
                 "roi": [
                     0,
                     1120,
                     210,
                     90
                 ],
-                "expected": [
-                    "全境征才"
-                ]
+                "threshold": 0.85
             }
         },
         "action": {
@@ -130,11 +134,10 @@
             "type": "And",
             "param": {
                 "all_of": [
-                    "__DailyRecruitmentNoBlockingPrompt",
-                    "__DailyRecruitmentOverviewTitle",
-                    "__DailyRecruitmentCollectAllButton"
+                    "__DailyRecruitmentNoPending",
+                    "DailyRecruitmentCollectResultsReadyBeforePendingCheck"
                 ],
-                "box_index": 2
+                "box_index": 1
             }
         },
         "action": {
@@ -239,17 +242,18 @@
     },
     "__DailyRecruitmentOverviewTitle": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
+                "template": [
+                    "DailyRecruitment/OverviewTitle720.png"
+                ],
                 "roi": [
                     80,
                     90,
-                    160,
+                    180,
                     80
                 ],
-                "expected": [
-                    "全境征才"
-                ]
+                "threshold": 0.85
             }
         }
     },
@@ -265,6 +269,7 @@
             "DailyRecruitmentSlot3CountLeader",
             "DailyRecruitmentSlot4CountRecruit",
             "DailyRecruitmentSlot4CountLeader",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentSlot1Open",
             "DailyRecruitmentSlot2Open",
             "DailyRecruitmentSlot3Open",
@@ -276,17 +281,18 @@
     },
     "DailyRecruitmentCycleEntry": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
+                "template": [
+                    "DailyRecruitment/OverviewTitle720.png"
+                ],
                 "roi": [
                     80,
                     90,
-                    160,
+                    180,
                     80
                 ],
-                "expected": [
-                    "全境征才"
-                ]
+                "threshold": 0.85
             }
         },
         "action": {
@@ -638,6 +644,7 @@
         },
         "next": [
             "DailyRecruitmentSlot1CountLeader",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentResumeFromMain"
         ],
         "pre_wait_freezes": {
@@ -895,6 +902,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "DailyRecruitmentSlot1CountRecruit",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentSlot1StartRecruitFallback",
             "DailyRecruitmentResumeFromMain"
         ],
@@ -934,6 +942,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "DailyRecruitmentSlot1CountRecruit",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentSlot1StartRecruit",
             "DailyRecruitmentResumeFromMain"
         ],
@@ -996,6 +1005,7 @@
         },
         "next": [
             "DailyRecruitmentSlot2CountLeader",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentResumeFromMain"
         ],
         "pre_wait_freezes": {
@@ -1253,6 +1263,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "DailyRecruitmentSlot2CountRecruit",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentSlot2StartRecruitFallback",
             "DailyRecruitmentResumeFromMain"
         ],
@@ -1292,6 +1303,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "DailyRecruitmentSlot2CountRecruit",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentSlot2StartRecruit",
             "DailyRecruitmentResumeFromMain"
         ],
@@ -1354,6 +1366,7 @@
         },
         "next": [
             "DailyRecruitmentSlot3CountLeader",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentResumeFromMain"
         ],
         "pre_wait_freezes": {
@@ -1611,6 +1624,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "DailyRecruitmentSlot3CountRecruit",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentSlot3StartRecruitFallback",
             "DailyRecruitmentResumeFromMain"
         ],
@@ -1650,6 +1664,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "DailyRecruitmentSlot3CountRecruit",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentSlot3StartRecruit",
             "DailyRecruitmentResumeFromMain"
         ],
@@ -1712,6 +1727,7 @@
         },
         "next": [
             "DailyRecruitmentSlot4CountLeader",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentResumeFromMain"
         ],
         "pre_wait_freezes": {
@@ -1969,6 +1985,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "DailyRecruitmentSlot4CountRecruit",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentSlot4StartRecruitFallback",
             "DailyRecruitmentResumeFromMain"
         ],
@@ -2008,6 +2025,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "DailyRecruitmentSlot4CountRecruit",
+            "DailyRecruitmentResumePendingEmpty",
             "DailyRecruitmentSlot4StartRecruit",
             "DailyRecruitmentResumeFromMain"
         ],
@@ -2078,8 +2096,8 @@
             "type": "And",
             "param": {
                 "all_of": [
-                    "__DailyRecruitmentBatchReady",
-                    "__DailyRecruitmentCollectAllButton"
+                    "__DailyRecruitmentNoPending",
+                    "DailyRecruitmentImmediateCollectResultsReadyBeforePendingCheck"
                 ],
                 "box_index": 1
             }
@@ -2186,17 +2204,18 @@
     },
     "DailyRecruitmentReturnFromOverview": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
+                "template": [
+                    "DailyRecruitment/OverviewTitle720.png"
+                ],
                 "roi": [
                     80,
                     90,
-                    160,
+                    180,
                     80
                 ],
-                "expected": [
-                    "全境征才"
-                ]
+                "threshold": 0.85
             }
         },
         "action": {
@@ -4281,5 +4300,68 @@
         "focus": {
             "Node.Action.Starting": "征才：异常恢复已回主页，重新进入全境征才，保留已完成次数和当前批次；回到主页不代表征才已完成。"
         }
+    },
+    "DailyRecruitmentCollectResultsReadyBeforePendingCheck": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": [
+                    "__DailyRecruitmentNoBlockingPrompt",
+                    "__DailyRecruitmentOverviewTitle",
+                    "__DailyRecruitmentCollectAllButton"
+                ],
+                "box_index": 2
+            }
+        }
+    },
+    "DailyRecruitmentImmediateCollectResultsReadyBeforePendingCheck": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": [
+                    "__DailyRecruitmentBatchReady",
+                    "__DailyRecruitmentCollectAllButton"
+                ],
+                "box_index": 1
+            }
+        }
+    },
+    "__DailyRecruitmentNoPending": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyRecruitmentPendingRecovery",
+                "custom_recognition_param": {
+                    "mode": "clear"
+                }
+            }
+        }
+    },
+    "DailyRecruitmentResumePendingEmpty": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "DailyRecruitmentPendingRecovery",
+                "custom_recognition_param": {
+                    "mode": "empty_after_login"
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "DailyRecruitmentResumePendingEmpty",
+                "custom_action_param": {}
+            }
+        },
+        "next": [
+            "DailyRecruitmentOverviewRouter",
+            "DailyRecruitmentResumeFromMain"
+        ],
+        "on_error": [
+            "TkfmTaskFailure"
+        ],
+        "rate_limit": 500,
+        "max_hit": 2
     }
 }

@@ -189,6 +189,85 @@ def _budget_slot_settled(context, slot, state):
     return state in EMPTY_STATES or (state == "recruiting" and not _planned_acceleration(context, slot))
 
 
+def _pending_empty_after_login(context, image):
+    from recovery import recovered_recruitment_pending
+
+    slot = _pending_slot(context)
+    pending = context.get_anchor(RECRUITMENT_PENDING_ANCHOR)
+    detail = {"slot": slot, "pending": pending}
+    if slot is None or pending not in {
+        f"DailyRecruitmentSlot{slot}StartRecruit", f"DailyRecruitmentSlot{slot}StartRecruitFallback"
+    } or not recovered_recruitment_pending(context, pending):
+        return False, detail
+    key = f"login_pending_empty_{slot}"
+    if not _overview_is_clear(context, image):
+        _OVERVIEW_OBSERVATIONS.pop(key, None)
+        return False, detail
+    state = _overview_slot_state(context, image, slot)
+    detail["state"] = state
+    # Recruiting/ready is settled by the existing CountRecruit branch first.
+    # An empty slot must be seen twice after a completed login, not during a
+    # delayed server response on the original setup page.
+    if state != "empty":
+        _OVERVIEW_OBSERVATIONS.pop(key, None)
+        return False, detail
+    confirmed = _overview_confirmed(key, [pending, state])
+    detail["confirmed_empty"] = confirmed
+    return confirmed, detail
+
+
+@AgentServer.custom_recognition("DailyRecruitmentPendingRecovery")
+class DailyRecruitmentPendingRecovery(CustomRecognition):
+    def analyze(self, context, argv):
+        try:
+            _ensure_task_session(argv.task_detail.task_id)
+            param = _recognition_params(argv.custom_recognition_param)
+            mode = param.get("mode") if param else None
+            if mode == "clear":
+                hit, detail = _pending_slot(context) is None, {"reason": "no_pending_submission"}
+            elif mode == "empty_after_login":
+                hit, detail = _pending_empty_after_login(context, argv.image)
+            else:
+                return CustomRecognition.AnalyzeResult(box=None, detail={"reason": "invalid_pending_mode"})
+            return CustomRecognition.AnalyzeResult(box=OVERVIEW_BOX if hit else None, detail=detail)
+        except Exception as error:
+            return CustomRecognition.AnalyzeResult(box=None, detail={"reason": "pending_recovery_error", "error": str(error)})
+
+
+@AgentServer.custom_action("DailyRecruitmentResumePendingEmpty")
+class DailyRecruitmentResumePendingEmpty(CustomAction):
+    def run(self, context, argv):
+        from recovery import clear_recovered_recruitment_pending
+
+        try:
+            image = context.tasker.controller.cached_image
+            if image is None:
+                return False
+            allowed, detail = _pending_empty_after_login(context, image)
+            if not allowed:
+                return False
+            slot = detail["slot"]
+            # Renew only this rejected submission's navigation, never the
+            # refresh allowance, acceleration confirmations or total ledger.
+            prefix = f"DailyRecruitmentSlot{slot}"
+            for name in _CYCLE_HIT_COUNT_NODES:
+                if name.startswith(prefix) and "Refresh" not in name:
+                    if not context.clear_hit_count(name):
+                        return False
+            if not context.set_anchor(RECRUITMENT_PENDING_ANCHOR, "DailyRecruitmentBudgetConfig"):
+                return False
+            clear_recovered_recruitment_pending(context)
+            _SLOT_SESSIONS.pop(slot, None)
+            _OVERVIEW_OBSERVATIONS.pop(f"login_pending_empty_{slot}", None)
+            _, maximum, entries = _recruitment_budget(context)
+            print(f"[全境征才] 登录恢复后连续确认第{slot}栏仍为空，上一笔提交未开始；"
+                  f"保留已确认{len(entries)}/{maximum}次，重新打开本栏读取词条；不补发刷新或加速额度。", flush=True)
+            return True
+        except Exception as error:
+            print(f"[全境征才] 登录后核对待确认栏位失败：{error}", flush=True)
+            return False
+
+
 @AgentServer.custom_recognition("DailyRecruitmentBudgetState")
 class DailyRecruitmentBudgetState(CustomRecognition):
     def analyze(self, context, argv):
@@ -298,7 +377,11 @@ class DailyRecruitmentRecordAttempt(CustomAction):
                 print(f"[全境征才] {result}。已处理 {len(entries)}/{maximum}{suffix}", flush=True)
             if not context.set_anchor(f"TkfmRecruitmentWriting{len(entries)}", "DailyRecruitmentBudgetConfig"):
                 return False
-            return context.set_anchor(RECRUITMENT_PENDING_ANCHOR, "DailyRecruitmentBudgetConfig")
+            if not context.set_anchor(RECRUITMENT_PENDING_ANCHOR, "DailyRecruitmentBudgetConfig"):
+                return False
+            from recovery import clear_recovered_recruitment_pending
+            clear_recovered_recruitment_pending(context)
+            return True
         except Exception as error:
             print(f"[全境征才] 次数记账失败：{error}", flush=True)
             return False
@@ -1006,5 +1089,8 @@ class DailyRecruitDecision(CustomRecognition):
                         box = _tag_box(decision, index)
                     else:
                         decision["reason"] = "tag_already_selected" if tag in selected else "tag_not_selected"
+        if mode == "submit" and box is not None:
+            from recovery import clear_recovered_recruitment_pending
+            clear_recovered_recruitment_pending(context)
         _report_recruitment_decision(session, decision, mode, box is not None)
         return _decision_result(box, decision, mode)
