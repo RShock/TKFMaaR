@@ -1,4 +1,4 @@
-"""Keep bounded reward requests pending until their visible response is closed."""
+"""Reconcile bounded reward requests with the current page, independently of navigation."""
 
 import re
 import time
@@ -11,25 +11,43 @@ configure_runtime()
 from maa.agent.agent_server import AgentServer
 from maa.custom_action import CustomAction
 from maa.custom_recognition import CustomRecognition
-from maa.pipeline import JActionType, JClick
+from maa.pipeline import JActionType, JClick, JLongPress
 
-from common import safe_json_loads
+from common import param_mode, safe_json_loads
 
 
-DAILY_CLAIM = "DailyTaskRewardsClaimDailyAvailable"
 DAILY_PAGE_CHECK = "__DailyTaskRewardsDailyPageReady"
 TABS = ("Daily", "Weekly", "Monthly", "Personal", "Activity", "Guild")
 CLAIM_TABS = {f"DailyTaskRewardsClaim{tab}Available": tab for tab in TABS}
 RESPONSE_TIMEOUT = 20
+HOME_ENTRY_CHECK = "__DailyTaskRewardsHomeEntry"
+HOME_ENTRY_LIMIT = 3
+HOME_ENTRY_RETRY_DELAY = 2.5
 TAB_LABELS = dict(zip(TABS, ("每日", "每周", "每月", "个人", "活动", "协会")))
+PAGE_BOX = (0, 0, 720, 1280)
+
+
+@dataclass
+class ClaimRequest:
+    tab: str
+    issued_at: float
+    claimed_before: int | None
+    response: str | None = None
+    inventory_seen: bool = False
+    observation: tuple | None = None
+    observed_at: float = 0
 
 
 @dataclass
 class RewardSession:
     attempts: dict[str, int] = field(default_factory=dict)
+    popup_closes: dict[tuple[str, str], int] = field(default_factory=dict)
     inventory_popups: int = 0
     last_daily_response_confirmed: bool = False
-    pending: dict | None = None
+    pending: ClaimRequest | None = None
+    resume_tab: str = "Daily"
+    home_open_attempts: int = 0
+    last_home_open_at: float = float("-inf")
 
 
 _SESSIONS: dict[str, RewardSession] = {}
@@ -42,6 +60,54 @@ def _session(context):
 
 def _miss(reason, **detail):
     return CustomRecognition.AnalyzeResult(box=None, detail={"reason": reason, **detail})
+
+
+def _find(context, image, name):
+    result = context.run_recognition(name, image)
+    return result if result is not None and result.hit and result.box is not None else None
+
+
+def _claim_limit(context, tab):
+    node = context.get_node_data(f"DailyTaskRewardsClaim{tab}Available") or {}
+    limit = node.get("max_hit", 3)
+    return limit if type(limit) is int and 0 < limit <= 3 and node.get("enabled") is not False else 0
+
+
+def _claimed_count(context, image):
+    result = context.run_recognition("__DailyTaskRewardsClaimedText", image)
+    if result is None:
+        return None
+    return sum(
+        re.sub(r"\s+", "", getattr(item, "text", "")) in {"已领取", "已領取"}
+        for item in (result.all_results or [])
+    )
+
+
+def _response_evidence(context, image, session):
+    """A returned page permits reconciliation, never completion by itself."""
+    pending = session.pending
+    if pending is None or not _find(context, image, f"__DailyTaskRewards{pending.tab}PageReady"):
+        return None
+    if pending.response in {"reward", "inventory_full"}:
+        return pending.response, None
+    claimed = _claimed_count(context, image)
+    if pending.claimed_before is not None and claimed is not None and claimed > pending.claimed_before:
+        return "visible_progress", claimed
+    claimable = context.run_recognition("__DailyTaskRewardsClaimable", image)
+    if (
+        claimable is not None and not claimable.hit
+        and _find(context, image, "__DailyTaskRewardsClaimDisabled")
+    ):
+        return "page_complete", claimed
+    # Claims are idempotent. Only a fully recognized, unobscured same page may
+    # release an unacknowledged request after its original deadline. Its attempt
+    # stays spent and provides no inventory-limit or completion evidence.
+    if (
+        time.monotonic() - pending.issued_at >= RESPONSE_TIMEOUT
+        and session.attempts.get(pending.tab, 0) < _claim_limit(context, pending.tab)
+    ):
+        return "unconfirmed_retry", claimed
+    return None
 
 
 @AgentServer.custom_action("DailyTaskRewardsInitialize")
@@ -61,9 +127,8 @@ class DailyTaskRewardsClaimReady(CustomRecognition):
             if argv.node_name not in CLAIM_TABS:
                 return _miss("unknown_claim_node")
             tab = CLAIM_TABS[argv.node_name]
-            node = context.get_node_data(argv.node_name) or {}
-            limit = node.get("max_hit", 3)
-            if type(limit) is not int or not 0 < limit <= 3 or session.attempts.get(tab, 0) >= limit:
+            limit = _claim_limit(context, tab)
+            if session.attempts.get(tab, 0) >= limit:
                 return _miss("claim_limit_reached", tab=tab)
             result = context.run_recognition("__" + argv.node_name + "Target", argv.image)
             if result is None or not result.hit:
@@ -104,17 +169,21 @@ class DailyTaskRewardsClaim(CustomAction):
             tab = CLAIM_TABS.get(argv.node_name)
             if tab is None or session.pending:
                 return False
-            node = context.get_node_data(argv.node_name) or {}
-            limit = node.get("max_hit", 3)
+            limit = _claim_limit(context, tab)
             used = session.attempts.get(tab, 0)
-            if type(limit) is not int or not 0 < limit <= 3 or used >= limit:
+            if used >= limit:
                 return False
             x, y, width, height = (int(value) for value in argv.box)
             if width <= 0 or height <= 0:
                 return False
             # Reserve before input. An uncertain response cannot issue a new request.
+            image = context.tasker.controller.cached_image
+            if image is None:
+                return False
+            claimed_before = _claimed_count(context, image)
             session.attempts[tab] = used + 1
-            session.pending = {"tab": tab, "time": time.monotonic(), "response": None}
+            session.pending = ClaimRequest(tab, time.monotonic(), claimed_before)
+            session.resume_tab = tab
             if tab == "Daily":
                 session.last_daily_response_confirmed = False
             point = (x + width // 2, y + height // 2)
@@ -139,31 +208,84 @@ class DailyTaskRewardsCloseResponse(CustomAction):
                 param = safe_json_loads(param, {})
             if not isinstance(param, dict):
                 return False
-            target, kind = param.get("target"), param.get("kind")
-            if kind not in {"reward", "inventory_full", "unknown"}:
+            kind = param.get("kind")
+            if kind not in {"reward", "inventory_full"}:
                 return False
-            if target is None:
-                x, y, width, height = (int(value) for value in argv.box)
-                if width <= 0 or height <= 0:
-                    return False
-                target = (x + width // 2, y + height // 2)
-            if len(target) != 2:
+            session = _session(context)
+            tab = session.pending.tab if session.pending else session.resume_tab
+            key = (tab, kind)
+            used = session.popup_closes.get(key, 0)
+            if used >= 6:
+                print(f"[奖励领取] {TAB_LABELS[tab]}页同类弹窗关闭已达6次，不再重复点击。", flush=True)
                 return False
+            x, y, width, height = (int(value) for value in argv.box)
+            if width <= 0 or height <= 0:
+                return False
+            target = (x + width // 2, y + height // 2)
+            session.popup_closes[key] = used + 1
             result = context.run_action_direct(JActionType.Click, JClick(target=tuple(target)))
             if result is None or not result.success:
                 return False
-            if kind == "inventory_full":
-                print("[奖励领取] 检测到仓库堆叠上限，已点击确定中点；返回当前页后核对领取额度，不进入登录恢复。", flush=True)
-            session = _session(context)
+            label = "奖励弹窗" if kind == "reward" else "仓库堆叠上限提示"
+            print(f"[奖励领取] 检测到{label}，已点击确定按钮中点{tuple(target)}；返回当前页后核对领取结果。", flush=True)
             pending = session.pending
             if pending is not None:
-                # A generic confirm is not proof that a reward was processed.
-                pending["response"] = kind
-            elif kind == "unknown":
-                session.last_daily_response_confirmed = False
+                pending.response = kind
+                pending.inventory_seen |= kind == "inventory_full"
+                pending.observation = None
             return True
         except Exception as error:
             print(f"[奖励领取] 弹窗处理失败：{error}", flush=True)
+            return False
+
+
+def _home_entry(context, image, session):
+    if (
+        session.home_open_attempts >= HOME_ENTRY_LIMIT
+        or time.monotonic() - session.last_home_open_at < HOME_ENTRY_RETRY_DELAY
+    ):
+        return None
+    return _find(context, image, HOME_ENTRY_CHECK)
+
+
+@AgentServer.custom_action("DailyTaskRewardsOpenPage")
+class DailyTaskRewardsOpenPage(CustomAction):
+    def run(self, context, argv):
+        try:
+            session = _session(context)
+            controller = context.tasker.controller
+            if not controller.post_screencap().wait().succeeded:
+                print("[奖励领取] 打开任务页前取图失败。", flush=True)
+                return False
+            image = controller.cached_image
+            icon = _home_entry(context, image, session) if image is not None else None
+            if icon is None:
+                # The page may have opened during the native stability wait.
+                return True
+            x, y, width, height = map(int, icon.box)
+            point = (x + width // 2, y + height // 2)
+            session.home_open_attempts += 1
+            attempt = session.home_open_attempts
+            session.last_home_open_at = time.monotonic()
+            if session.pending:
+                session.resume_tab = session.pending.tab
+                session.pending.observation = None
+            if attempt == 1:
+                result = context.run_action_direct(JActionType.Click, JClick(target=point))
+                gesture = "点击"
+            else:
+                result = context.run_action_direct(JActionType.LongPress, JLongPress(target=point, duration=120))
+                gesture = "按住120毫秒"
+            sent = bool(result and result.success)
+            print(
+                f"[奖励领取] 第{attempt}/{HOME_ENTRY_LIMIT}次打开任务页。"
+                f"识别到主页任务图标，{gesture}中心{point}，输入{'已发送' if sent else '失败'}。"
+                f"等待确认任务页，再核对{TAB_LABELS[session.resume_tab]}页。",
+                flush=True,
+            )
+            return True
+        except Exception as error:
+            print(f"[奖励领取] 打开任务页失败：{error}", flush=True)
             return False
 
 
@@ -172,36 +294,32 @@ class DailyTaskRewardsResponseState(CustomRecognition):
     def analyze(self, context, argv):
         mode = None
         try:
-            param = argv.custom_recognition_param
-            if isinstance(param, str):
-                param = safe_json_loads(param, {})
-            mode = param.get("mode") if isinstance(param, dict) else None
-            if mode not in {"pending", "wait", "timeout"}:
+            mode = param_mode(argv.custom_recognition_param)
+            if mode not in {"pending", "wait", "timeout", "observe", "open", *TABS}:
                 return _miss("unknown_response_mode")
             session = _session(context)
+            if mode in TABS:
+                return CustomRecognition.AnalyzeResult(
+                    box=PAGE_BOX if session.resume_tab == mode else None, detail={"resume_tab": session.resume_tab}
+                )
+            if mode == "open":
+                icon = _home_entry(context, argv.image, session)
+                return CustomRecognition.AnalyzeResult(
+                    box=icon.box if icon else None, detail={"home_open_attempts": session.home_open_attempts}
+                )
             pending = session.pending
             if pending is None:
                 return _miss("no_pending_claim")
-            if mode == "wait" and pending["response"] in {"reward", "inventory_full"}:
-                result = context.run_recognition(
-                    f"__DailyTaskRewards{pending['tab']}PageReady", argv.image
+            elapsed = time.monotonic() - pending.issued_at
+            if mode == "observe":
+                evidence = _response_evidence(context, argv.image, session)
+                return CustomRecognition.AnalyzeResult(
+                    box=PAGE_BOX if evidence else None,
+                    detail={"tab": pending.tab, "evidence": evidence, "elapsed": round(elapsed, 1)},
                 )
-                if result is not None and result.hit:
-                    if pending["tab"] == "Daily":
-                        session.last_daily_response_confirmed = True
-                        if pending["response"] == "inventory_full":
-                            session.inventory_popups += 1
-                    kind = "奖励弹窗" if pending["response"] == "reward" else "仓库上限提示"
-                    print(
-                        f"[奖励领取] {TAB_LABELS[pending['tab']]}页：已关闭{kind}并重新识别到当前页，继续检查剩余奖励。",
-                        flush=True,
-                    )
-                    session.pending = None
-                    return _miss("claim_response_confirmed")
-            elapsed = time.monotonic() - pending["time"]
             hit = mode == "pending" or (elapsed < RESPONSE_TIMEOUT if mode == "wait" else elapsed >= RESPONSE_TIMEOUT)
-            detail = {"tab": pending["tab"], "response": pending["response"], "elapsed": round(elapsed, 1)}
-            return CustomRecognition.AnalyzeResult(box=(0, 0, 720, 1280) if hit else None, detail=detail)
+            detail = {"tab": pending.tab, "response": pending.response, "elapsed": round(elapsed, 1)}
+            return CustomRecognition.AnalyzeResult(box=PAGE_BOX if hit else None, detail=detail)
         except Exception as error:
             # Missing bookkeeping is not permission to claim again or finish a page.
             return CustomRecognition.AnalyzeResult(
@@ -210,17 +328,51 @@ class DailyTaskRewardsResponseState(CustomRecognition):
             )
 
 
+@AgentServer.custom_action("DailyTaskRewardsReconcile")
+class DailyTaskRewardsReconcile(CustomAction):
+    def run(self, context, argv):
+        try:
+            session = _session(context)
+            image = context.tasker.controller.cached_image
+            if image is None:
+                return False
+            evidence = _response_evidence(context, image, session)
+            pending = session.pending
+            if evidence is None or pending is None:
+                return False
+            now = time.monotonic()
+            # Recognition is read-only. Only this explicit action can settle a
+            # request, after two page observations at least 500ms apart.
+            if pending.observation != evidence:
+                pending.observation, pending.observed_at = evidence, now
+                return True
+            if now - pending.observed_at < 0.5:
+                return True
+            kind = evidence[0]
+            if pending.tab == "Daily":
+                session.last_daily_response_confirmed = kind != "unconfirmed_retry"
+                if pending.inventory_seen:
+                    session.inventory_popups += 1
+            labels = {
+                "reward": "奖励弹窗已关闭，并两次确认回到当前页",
+                "inventory_full": "仓库上限提示已关闭，并两次确认回到当前页",
+                "visible_progress": "两次确认列表中已领取条目增加，领取已有实际进展",
+                "page_complete": "两次确认领取按钮不可用且无可领取条目",
+                "unconfirmed_retry": "20秒未确认响应，但两次确认当前页无遮挡；保留已用次数，重新识别剩余奖励，不记为领取成功",
+            }
+            print(f"[奖励领取] {TAB_LABELS[pending.tab]}页：{labels[kind]}。", flush=True)
+            session.pending = None
+            return True
+        except Exception as error:
+            print(f"[奖励领取] 响应核对失败，保留请求账目：{error}", flush=True)
+            return False
+
+
 @AgentServer.custom_recognition("DailyTaskRewardsInventorySkip")
 class DailyTaskRewardsInventorySkip(CustomRecognition):
     def analyze(self, context, argv):
-        claim = context.get_node_data(DAILY_CLAIM)
-        limit = claim.get("max_hit") if isinstance(claim, dict) else None
-        if (
-            not isinstance(claim, dict)
-            or claim.get("enabled") is False
-            or type(limit) is not int
-            or not 0 < limit <= 3
-        ):
+        limit = _claim_limit(context, "Daily")
+        if not limit:
             return self._miss("invalid_claim_limit")
 
         try:
