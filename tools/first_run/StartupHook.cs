@@ -8,21 +8,12 @@ internal static class StartupHook
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int MessageBoxW(IntPtr owner, string text, string title, uint flags);
 
-    private static bool WasShown(string marker)
-    {
-        if (!File.Exists(marker)) return false;
-        try
-        {
-            using var state = JsonDocument.Parse(File.ReadAllText(marker));
-            return state.RootElement.GetProperty("status").GetString() != "starting";
-        }
-        catch { return true; }
-    }
-
     public static void Initialize()
     {
-        if (!OperatingSystem.IsWindows()) return;
         string root = AppContext.BaseDirectory;
+        AppDomain.CurrentDomain.SetData("TKFMaa.ExportErrorLogs", new Func<string, string, string>(ErrorLogExport.Create));
+        AppDomain.CurrentDomain.SetData("TKFMaa.RevealErrorLogs", new Action<string>(ErrorLogExport.Reveal));
+        AppDomain.CurrentDomain.SetData("TKFMaa.ResolveEmulatorConnection", new Func<string, string, string, bool, string, string, string[]>(EmulatorConnectionDefaults.Resolve));
         string marker = Path.Combine(root, ".tkfm-first-run-migration.json");
         try
         {
@@ -48,12 +39,20 @@ internal static class StartupHook
                     catch (IOException) when (attempt < 100) { Thread.Sleep(100); }
                     catch (IOException)
                     {
-                        MessageBoxW(IntPtr.Zero, "旧版配置仍在导入，请等待迁移完成后再打开助手。", "TKFMaaR", 0x30);
+                        ShowError("旧版配置仍在导入，请等待迁移完成后再打开助手。");
                         Environment.Exit(0);
                         return;
                     }
                 }
-                if (WasShown(marker)) return;
+                // Normal installation and same-directory updates are automatic.
+                // The legacy wizard is now an explicit cross-directory import only.
+                string request = Path.Combine(root, ".tkfm-import-request");
+                if (!OperatingSystem.IsWindows() || !File.Exists(request))
+                {
+                    UserDataMigration.Apply(root);
+                    ScheduleBootstrap.Start(root);
+                    return;
+                }
                 string script = Path.Combine(root, "migration", "first_run.ps1");
                 if (!File.Exists(script)) throw new FileNotFoundException("缺少首次启动迁移向导", script);
                 // Separate from config/: importing old settings cannot restore the prompt.
@@ -86,12 +85,22 @@ internal static class StartupHook
                     File.WriteAllText(log, output.GetAwaiter().GetResult() + error.GetAwaiter().GetResult());
                     throw new IOException("迁移向导未正常结束，错误详情：" + log);
                 }
+                File.Delete(request);
+                UserDataMigration.Apply(root);
+                ScheduleBootstrap.Start(root);
             }
         }
         catch (Exception ex)
         {
-            MessageBoxW(IntPtr.Zero, "旧版配置迁移未完成：" + ex.Message +
-                "\n助手将继续启动。旧版目录保留，可按升级说明手动复制配置和截图。", "TKFMaaR", 0x30);
+            ShowError("配置自动迁移未完成：" + ex.Message +
+                "\n已停止启动，避免用不完整配置运行。原资料及 backup/ 备份保留，请按配置迁移说明恢复。");
+            Environment.Exit(1);
         }
+    }
+
+    private static void ShowError(string message)
+    {
+        if (OperatingSystem.IsWindows()) MessageBoxW(IntPtr.Zero, message, "TKFMaaR", 0x30);
+        else Console.Error.WriteLine(message);
     }
 }

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
 using Avalonia.Threading;
@@ -22,12 +21,13 @@ public sealed class TkfmStartupLogFix : IMaaCustomAction
         // Consume the auto-connect onlyStart completion synchronously. Waiting for
         // the UI dispatcher can race with the short startup connection task.
         TkfmStartupLogFixService.SuppressCurrentStartupCompletion();
-        Dispatcher.UIThread.Post(() =>
+        // Resource loading precedes SetConnected. Install the handlers before returning.
+        const string key = "TKFMaa.StartupLogFix.Service";
+        lock (string.Intern(key))
         {
-            const string key = "TKFMaa.StartupLogFix.Service";
             (AppDomain.CurrentDomain.GetData(key) as IDisposable)?.Dispose();
             AppDomain.CurrentDomain.SetData(key, new TkfmStartupLogFixService());
-        });
+        }
     }
 
     public bool Run<T>(T context, in RunArgs args, in RunResults results) where T : IMaaContext => true;
@@ -36,29 +36,35 @@ public sealed class TkfmStartupLogFix : IMaaCustomAction
 internal sealed class TkfmStartupLogFixService : IDisposable
 {
     private const string SeparateCaptureSetting = "UseSeparateScreenshotTasker";
-    // EmulatorExtras can return no frame briefly while the emulator finishes its
-    // first native capture setup. Keep the normal warning for failures that persist
-    // beyond this short connection grace period.
-    private static readonly TimeSpan LiveViewGrace = TimeSpan.FromSeconds(2.5);
-
     private static readonly FieldInfo? CompletionHandledField = typeof(MaaProcessor).GetField(
         "_stopCompletionMessageHandled", BindingFlags.Instance | BindingFlags.NonPublic);
 
     private static readonly FieldInfo? LiveViewNoImageLoggedField = typeof(TaskQueueViewModel).GetField(
         "_liveViewNoImageLogged", BindingFlags.Instance | BindingFlags.NonPublic);
 
-    private readonly Dictionary<MaaProcessor, ProcessorState> processors = new Dictionary<MaaProcessor, ProcessorState>();
-    private readonly DispatcherTimer timer;
+    private static readonly FieldInfo? LiveTimerField = typeof(TaskQueueViewModel).GetField(
+        "_liveViewTimer", BindingFlags.Instance | BindingFlags.NonPublic);
+    private static readonly MethodInfo? LiveTickMethod = typeof(TaskQueueViewModel).GetMethod(
+        "OnLiveViewTimerElapsed", BindingFlags.Instance | BindingFlags.NonPublic);
+    private readonly object sync = new object();
+    private readonly Dictionary<MaaProcessor, PreviewGuard> processors = new();
+    private DispatcherTimer? timer;
     private bool disposed;
 
     internal TkfmStartupLogFixService()
     {
-        timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-        timer.Tick += Refresh;
         Refresh(null, EventArgs.Empty);
-        timer.Start();
+        Dispatcher.UIThread.Post(() =>
+        {
+            lock (sync)
+            {
+                if (disposed) return;
+                timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+                timer.Tick += Refresh;
+                timer.Start();
+            }
+        });
     }
-
     internal static void SuppressCurrentStartupCompletion()
     {
         try
@@ -97,79 +103,38 @@ internal sealed class TkfmStartupLogFixService : IDisposable
 
     private void Refresh(object? sender, EventArgs args)
     {
-        if (disposed) return;
-
-        try
+        lock (sync)
         {
-            ConfigureSharedCapture();
-            foreach (var processor in MaaProcessor.Processors.ToArray())
+            if (disposed) return;
+            try
             {
-                if (!processors.TryGetValue(processor, out var state))
+                ConfigureSharedCapture();
+                var active = MaaProcessor.Processors.ToArray();
+                foreach (var processor in active)
                 {
-                    state = new ProcessorState();
-                    processors.Add(processor, state);
-                }
-
-                var viewModel = processor.ViewModel;
-                if (!ReferenceEquals(state.ViewModel, viewModel))
-                {
-                    if (state.ViewModel != null)
-                        state.ViewModel.PropertyChanged -= state.PropertyChangedHandler;
-
-                    state.ViewModel = viewModel;
-                    if (viewModel != null)
+                    var vm = processor.ViewModel;
+                    processors.TryGetValue(processor, out var old);
+                    if (ReferenceEquals(old?.ViewModel, vm)) continue;
+                    old?.Dispose();
+                    processors.Remove(processor);
+                    if (vm != null && LiveViewNoImageLoggedField?.FieldType == typeof(bool)
+                        && LiveTimerField?.GetValue(vm) is System.Timers.Timer poller
+                        && LiveTickMethod != null)
                     {
-                        state.PropertyChangedHandler = (_, eventArgs) =>
-                        {
-                            if (eventArgs.PropertyName == nameof(TaskQueueViewModel.IsConnected)
-                                && viewModel.IsConnected)
-                                BeginLiveViewGrace(state);
-                        };
-                        viewModel.PropertyChanged += state.PropertyChangedHandler;
+                        var original = (System.Timers.ElapsedEventHandler)LiveTickMethod.CreateDelegate(
+                            typeof(System.Timers.ElapsedEventHandler), vm);
+                        processors[processor] = new PreviewGuard(processor, vm, poller, original);
                     }
                 }
-
-                if (viewModel?.IsConnected == true)
+                foreach (var removed in processors.Keys.Except(active).ToArray())
                 {
-                    if (!state.WasConnected)
-                    {
-                        state.WasConnected = true;
-                        BeginLiveViewGrace(state);
-                    }
-
-                    if (state.GraceUntil > DateTime.UtcNow)
-                        SetBoolField(viewModel, LiveViewNoImageLoggedField, true);
-                    else if (state.GraceActive)
-                    {
-                        state.GraceActive = false;
-                        SetBoolField(viewModel, LiveViewNoImageLoggedField, false);
-                    }
-                }
-                else
-                {
-                    state.WasConnected = false;
+                    processors[removed].Dispose();
+                    processors.Remove(removed);
                 }
             }
-
-            foreach (var removed in processors.Keys.Where(processor => !MaaProcessor.Processors.Contains(processor)).ToArray())
-            {
-                processors[removed].Dispose();
-                processors.Remove(removed);
-            }
-        }
-        catch
-        {
-            // A version mismatch must never interfere with the frontend connection flow.
+            catch { /* Optional compatibility fix; never block the connection. */ }
         }
     }
-
-    private static void BeginLiveViewGrace(ProcessorState state)
-    {
-        state.GraceActive = true;
-        state.GraceUntil = DateTime.UtcNow + LiveViewGrace;
-        SetBoolField(state.ViewModel, LiveViewNoImageLoggedField, true);
-    }
-
     private static void SetBoolField(object? target, FieldInfo? field, bool value)
     {
         if (target == null || field == null || field.FieldType != typeof(bool)) return;
@@ -186,26 +151,67 @@ internal sealed class TkfmStartupLogFixService : IDisposable
 
     public void Dispose()
     {
-        disposed = true;
-        timer.Stop();
-        foreach (var state in processors.Values) state.Dispose();
-        processors.Clear();
+        lock (sync)
+        {
+            disposed = true;
+            var oldTimer = timer;
+            if (oldTimer != null) Dispatcher.UIThread.Post(() => { oldTimer.Stop(); oldTimer.Tick -= Refresh; });
+            foreach (var guard in processors.Values) guard.Dispose();
+            processors.Clear();
+        }
     }
 
-    private sealed class ProcessorState : IDisposable
+    private sealed class PreviewGuard : IDisposable
     {
-        internal TaskQueueViewModel? ViewModel;
-        internal PropertyChangedEventHandler? PropertyChangedHandler;
-        internal bool WasConnected;
-        internal bool GraceActive;
-        internal DateTime GraceUntil;
+        internal readonly TaskQueueViewModel ViewModel;
+        private readonly MaaProcessor processor;
+        private readonly System.Timers.Timer poller;
+        private readonly System.Timers.ElapsedEventHandler original;
+        private readonly object gate = new object();
+        private bool disposed;
+        private bool wasExecuting;
+
+        internal PreviewGuard(MaaProcessor processor, TaskQueueViewModel vm, System.Timers.Timer poller,
+            System.Timers.ElapsedEventHandler original)
+        {
+            this.processor = processor;
+            ViewModel = vm;
+            this.poller = poller;
+            this.original = original;
+            SetBoolField(ViewModel, LiveViewNoImageLoggedField, true);
+            poller.Elapsed -= original;
+            poller.Elapsed += Tick;
+        }
+
+        private void Tick(object? sender, System.Timers.ElapsedEventArgs args)
+        {
+            // Avalonia can receive another timer tick while the preceding frame is in flight.
+            if (!System.Threading.Monitor.TryEnter(gate)) return;
+            try
+            {
+                if (disposed) return;
+                bool executing = processor.IsTaskRunActive && processor.MaaTasker?.IsRunning == true;
+                // The native poller clears this flag on every successful frame. Apply
+                // the idle policy at the actual point of use so a later gap stays quiet.
+                if (!executing || !wasExecuting)
+                    SetBoolField(ViewModel, LiveViewNoImageLoggedField, !executing);
+                wasExecuting = executing;
+                original(sender, args);
+            }
+            catch (ObjectDisposedException) { /* The device can be released while a tick is queued. */ }
+            finally { System.Threading.Monitor.Exit(gate); }
+        }
 
         public void Dispose()
         {
-            if (ViewModel != null && PropertyChangedHandler != null)
-                ViewModel.PropertyChanged -= PropertyChangedHandler;
-            ViewModel = null;
-            PropertyChangedHandler = null;
+            lock (gate)
+            {
+                if (disposed) return;
+                disposed = true;
+                poller.Elapsed -= Tick;
+                poller.Elapsed += original;
+                SetBoolField(ViewModel, LiveViewNoImageLoggedField, false);
+            }
         }
     }
 }

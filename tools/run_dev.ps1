@@ -11,6 +11,7 @@ $frontendPath = Join-Path $runtimeRoot 'MFAAvalonia.exe'
 $pythonPath = Join-Path $projectRoot '.venv312/Scripts/python.exe'
 $sourceInterfacePath = Join-Path $projectRoot 'assets/interface.json'
 $runtimeInterfacePath = Join-Path $runtimeRoot 'interface.json'
+$sourceIcons = @('logo.png', 'logo.ico' | ForEach-Object { Join-Path $projectRoot "assets/$_" })
 $globalConfigPath = Join-Path $runtimeRoot 'config/config.json'
 $backupRoot = Join-Path $runtimeRoot ('backup/dev-run-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fffffff'))
 $nativePath = Join-Path $runtimeRoot 'runtimes/win-x64/native'
@@ -18,7 +19,8 @@ if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') {
     $nativePath = Join-Path $runtimeRoot 'runtimes/win-arm64/native'
 }
 
-foreach ($requiredPath in @($frontendPath, $pythonPath, $sourceInterfacePath, (Join-Path $nativePath 'MaaFramework.dll'))) {
+$requiredPaths = @($frontendPath, $pythonPath, $sourceInterfacePath, (Join-Path $nativePath 'MaaFramework.dll'))
+foreach ($requiredPath in ($requiredPaths + $sourceIcons)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw "缺少开发运行依赖：$requiredPath。请先准备 install/ 前端及运行时和 .venv312/ Python 3.12 环境。"
     }
@@ -28,7 +30,11 @@ $interface = Get-Content -LiteralPath $sourceInterfacePath -Raw -Encoding utf8 |
     ConvertFrom-Json -AsHashtable -Depth 100
 foreach ($resource in $interface.resource) {
     $resource.path = @($resource.path | ForEach-Object {
-        [IO.Path]::GetFullPath((Join-Path (Split-Path $sourceInterfacePath -Parent) $_))
+        if ($_ -eq './userdata/resource') {
+            [IO.Path]::GetFullPath((Join-Path $runtimeRoot 'userdata/resource'))
+        } else {
+            [IO.Path]::GetFullPath((Join-Path (Split-Path $sourceInterfacePath -Parent) $_))
+        }
     })
 }
 $interface.agent.child_exec = $pythonPath
@@ -100,13 +106,24 @@ if ($ForceRestart) {
     }
 }
 
-# Without -ForceRestart, retain the normal graceful-close behavior.
+# The background extension accepts graceful exit by PID even with its window hidden.
+# Older frontends still use their own close and task-confirmation behavior.
 $runningFrontends = @(Get-Process -Name 'MFAAvalonia' -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -eq $frontendPath })
 foreach ($frontend in $runningFrontends) {
-    Write-Output '正在请求旧助手退出；暂停中的任务仍被前端视为运行中，如出现退出确认，请在助手中确认。'
-    if (-not $frontend.CloseMainWindow() -or -not $frontend.WaitForExit(30000)) {
-        throw '旧助手未完成退出，可能正在等待退出确认。可停止任务并关闭助手，或在明确允许中断任务时使用 tools/run_dev.ps1 -ForceRestart。未更新运行配置。'
+    Write-Output '正在请求旧助手退出。'
+    $exitRequest = $null
+    $eventName = 'Local\TKFMaaR.DevExit.' + $frontend.Id
+    if ([Threading.EventWaitHandle]::TryOpenExisting($eventName, [ref]$exitRequest)) {
+        try { $requested = $exitRequest.Set() }
+        finally { $exitRequest.Dispose() }
+        $timeout = 8000
+    } else {
+        $requested = $frontend.CloseMainWindow()
+        $timeout = 30000
+    }
+    if (-not $requested -or -not $frontend.WaitForExit($timeout)) {
+        throw '旧助手仍在运行。请等待任务完成后从托盘菜单退出，或在明确允许中断任务时使用 tools/run_dev.ps1 -ForceRestart。未更新运行配置。'
     }
 }
 
@@ -156,12 +173,11 @@ if ($globalConfig['TkfmForkUpdateCheckV1'] -ne $true) {
     $globalConfig['TkfmForkUpdateCheckV1'] = $true
 }
 $globalConfig['DownloadSourceIndex'] = 0
-foreach ($setting in @('EnableAutoUpdateResource', 'EnableAutoUpdateMFA')) {
-    $globalConfig[$setting] = $false
-}
+$globalConfig['EnableAutoUpdateMFA'] = $false
 New-Item -ItemType Directory -Path (Split-Path $globalConfigPath -Parent) -Force | Out-Null
 [IO.File]::WriteAllText($globalConfigPath, ($globalConfig | ConvertTo-Json -Depth 100) + "`n",
     [Text.UTF8Encoding]::new($false))
+Copy-Item -LiteralPath $sourceIcons -Destination $runtimeRoot
 $interfaceJson = ($interface | ConvertTo-Json -Depth 100) + "`n"
 [IO.File]::WriteAllText($runtimeInterfacePath, $interfaceJson, [Text.UTF8Encoding]::new($false))
 
@@ -173,9 +189,9 @@ $frontendProcess = Start-Process -FilePath $frontendPath -WorkingDirectory $runt
         TKFM_FIRST_RUN_PYTHON = $pythonPath; TKFM_FIRST_RUN_PWSH = (Join-Path $PSHOME 'pwsh.exe')
     }
 Write-Output "已启动开发版，PID：$($frontendProcess.Id)"
-Write-Output '版本检查使用 RShock/TKFMaaR，首次恢复为开启，后续保留用户选择；自动安装保持关闭。'
+Write-Output '版本检查使用 RShock/TKFMaaR，保留用户的检查与资源自动更新设置。'
 Write-Output '任务识别与实时预览共用一个截图控制器，不再另建预览连接。'
-Write-Output '首次打开此目录将显示旧版配置迁移向导，可取消；之后不再自动提示。'
+Write-Output '配置与关卡截图在启动前自动迁移，不再自动弹出旧助手导入向导。'
 Write-Output "资源：$(Join-Path $projectRoot 'assets/resource')"
 Write-Output "Agent：$(Join-Path $projectRoot 'agent/main.py')"
 Write-Output '未传入自动执行参数；请在界面中手动运行需要验证的任务。'

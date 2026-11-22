@@ -19,16 +19,16 @@
             "name": "官服",
             "label": "工口服务器",
             "path": [
-                "./resource"
-            ],
-            "description": "游戏包 com.pinkcore.tkfm；开始任务时自动检测游戏状态。"
+                "./resource",
+                "./userdata/resource"
+            ]
         },
         {
             "name": "erolab服务器",
             "path": [
-                "./resource"
-            ],
-            "description": "游戏包 com.pinkcore.tkfm.erolabs；开始任务时自动检测游戏状态。"
+                "./resource",
+                "./userdata/resource"
+            ]
         }
     ],
     "agent": {
@@ -1601,5 +1601,6 @@
                 }
             ]
         }
-    }
+    },
+    "icon": "./logo.png"
 }

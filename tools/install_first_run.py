@@ -1,4 +1,4 @@
-"""Install the Windows pre-configuration startup hook without changing frontend binaries."""
+"""Install the desktop user-data startup hook without changing frontend binaries."""
 
 import argparse
 import json

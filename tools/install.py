@@ -18,7 +18,7 @@ from install_first_run import install_first_run
 
 working_dir = Path(__file__).parent.parent.resolve()
 install_path = working_dir / Path("install")
-version = len(sys.argv) > 1 and sys.argv[1] or "v1.5"
+version = len(sys.argv) > 1 and sys.argv[1] or "v2.0"
 
 # the first parameter is self name
 if sys.argv.__len__() < 4:
@@ -107,12 +107,16 @@ def install_resource():
     shutil.copytree(
         working_dir / "assets" / "resource",
         install_path / "resource",
+        ignore=shutil.ignore_patterns("UserStages"),
         dirs_exist_ok=True,
     )
     shutil.copy2(
         working_dir / "assets" / "interface.json",
         install_path,
     )
+
+    for icon_filename in ("logo.png", "logo.ico"):
+        shutil.copy2(working_dir / "assets" / icon_filename, install_path)
 
     with open(install_path / "interface.json", "r", encoding="utf-8") as f:
         interface = jsonc.load(f)
@@ -131,23 +135,18 @@ def install_resource():
 
 
 def install_chores():
-    # A clean release checks the fork on GitHub before custom extensions load.
-    # Only write release defaults; never copy a maintainer's local configuration.
-    config_path = install_path / "config" / "config.json"
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    with config_path.open("w", encoding="utf-8") as f:
-        jsonc.dump(
-            {
-                "EnableCheckVersion": True,
-                "TkfmForkUpdateCheckV1": True,
-                "DownloadSourceIndex": 0,
-                "EnableAutoUpdateResource": False,
-                "EnableAutoUpdateMFA": False,
-            },
-            f,
-            ensure_ascii=False,
-            indent=4,
-        )
+    # Never include user settings in an update payload. The startup hook inserts
+    # missing defaults on disk before MFA reads settings, preserving false/empty.
+    if (install_path / "appsettings.json").exists() or any((install_path / "config").rglob("*")):
+        raise RuntimeError("构建目录含用户配置；请使用干净的发布暂存目录，不得将配置打入更新包")
+    if any(path.is_file() and path.name != ".gitkeep" for path in (install_path / "userdata").rglob("*")) or any(
+        path.is_file() for path in (install_path / "resource/image/UserStages").rglob("*")
+    ):
+        raise RuntimeError("构建目录含用户截图；请使用干净的发布暂存目录")
+    shutil.copytree(
+        working_dir / "assets/userdata", install_path / "userdata",
+        ignore=shutil.ignore_patterns("UserStages"), dirs_exist_ok=True,
+    )
     shutil.copy2(
         working_dir / "README.md",
         install_path,
@@ -156,7 +155,7 @@ def install_chores():
         working_dir / "LICENSE",
         install_path,
     )
-    if os_name == "win":
+    if os_name != "android":
         install_first_run(install_path, working_dir / "build" / "first-run-hook" / "TkfmFirstRun.dll")
 
 

@@ -276,9 +276,7 @@ def main(args):
     interface = read_json(old_root / "interface.json")
     if interface.get("name", "").replace("（开发版）", "") not in {"TKFMaa", "TKFMaaR"}:
         raise ValueError("所选进程不是 TKFMaa/TKFMaaR 助手")
-    current_interface = read_json(new_root / "interface.json")
-    new_resource = next((root for root in reversed(resource_roots(new_root, current_interface))
-                         if (root / "custom/TkfmCustomStage.cs").is_file()), new_root / "resource")
+    new_resource = new_root / "userdata/resource"
     if new_resource.exists():
         plain_path(new_resource)
     image_target = new_resource.resolve() / "image/UserStages"

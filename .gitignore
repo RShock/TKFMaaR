@@ -470,3 +470,4 @@ tmp
 
 # User-recorded activity and stage templates (private local data)
 /assets/resource/image/UserStages/
+/assets/userdata/resource/image/UserStages/

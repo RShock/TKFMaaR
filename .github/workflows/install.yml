@@ -26,6 +26,7 @@ on:
       - "maatools.config.mts"
       - ".python-version"
       - "**.py"
+      - "tools/first_run/**"
   pull_request:
     branches:
       - "**"
@@ -37,6 +38,7 @@ on:
       - "maatools.config.mts"
       - ".python-version"
       - "**.py"
+      - "tools/first_run/**"
   workflow_dispatch:
 
 jobs:
@@ -179,13 +181,13 @@ jobs:
           python-version: "${{ env.PYTHON_VERSION }}"
 
       - name: Set up startup hook SDK
-        if: matrix.os == 'win'
+        if: matrix.os != 'android'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
 
-      - name: Build Windows first-run hook
-        if: matrix.os == 'win'
+      - name: Build desktop user data startup hook
+        if: matrix.os != 'android'
         run: dotnet build tools/first_run/TkfmFirstRun.csproj --configuration Release --output build/first-run-hook --nologo
 
       - name: Clean up MFAAvalonia archive
@@ -209,7 +211,7 @@ jobs:
             if [ -d "MFA" ]; then
               echo "Copying MFA files to install directory..."
               mkdir -p install
-              rsync -av --ignore-existing MFA/ install/
+              rsync -av --ignore-existing --exclude='config/' --exclude='appsettings.json' --exclude='userdata/' MFA/ install/
               echo "MFA files copied successfully."
             else
               echo "MFA directory not found, skipping copy."
