@@ -13,7 +13,7 @@ from maa.custom_action import CustomAction
 from maa.custom_recognition import CustomRecognition
 from maa.pipeline import JActionType, JClick, JOCR
 
-from common import safe_json_loads
+from common import param_mode
 
 
 PREFIX = "__DailyCharacterUpgrade"
@@ -43,11 +43,6 @@ def _session(context):
     return _SESSIONS[context.tasker.controller.uuid]
 
 
-def _mode(raw):
-    param = safe_json_loads(raw, {}) if isinstance(raw, str) else raw
-    return param.get("mode") if isinstance(param, dict) else None
-
-
 def _find(context, image, name, roi=None):
     node = PREFIX + name
     override = {node: {"recognition": {"param": {"roi": list(roi)}}}} if roi else None
@@ -72,7 +67,11 @@ def _integer(text):
 
 
 def _panel(context, image):
-    return _find(context, image, "StrengthenTab") and _find(context, image, "LowestPotion")
+    # The purple tab background flashes with the character animation. Require
+    # the potion plus another fixed control, rather than the whole tab alone.
+    return _find(context, image, "LowestPotion") and (
+        _find(context, image, "Clear") or _find(context, image, "StrengthenTab")
+    )
 
 
 def _overview(context, image):
@@ -198,10 +197,25 @@ def _locate(context, image, session, mode):
         return (button.box if button else None), detail
 
     if mode == "restart_home":
-        if _panel(context, image) or _overview(context, image) or _find(context, image, "FilterTitle"):
+        # A missed page marker does not establish that we left the upgrade
+        # flow. Only navigate home from a positively identified foreign page.
+        if any(_find(context, image, name) for name in (
+            "LowestPotion", "StrengthenTab", "Clear", "OverviewInfo", "OverviewUpgrade", "FilterTitle"
+        )):
             return None, detail
         button = _find(context, image, "Castle")
-        return (button.box if button else None), detail
+        if not button:
+            return None, detail
+        for node in (
+            "DailyShopAlreadyInShop", "__DailyTaskRewardsPageTitle",
+            "__DailyAlchemyOrdersTitle", "__DailyRecruitmentOverviewTitle"
+        ):
+            page = context.run_recognition(node, image)
+            if page and page.hit:
+                detail["foreign_page"] = node
+                return button.box, detail
+        detail["reason"] = "当前页面尚未确认，继续识别；超时后交给通用恢复"
+        return None, detail
 
     if mode in {"clear_selection", "select_potion", "submit", "no_stock", "leave_unselected_panel"}:
         current = _snapshot(context, image)
@@ -243,7 +257,7 @@ def _locate(context, image, session, mode):
 class DailyCharacterUpgradeState(CustomRecognition):
     def analyze(self, context, argv):
         try:
-            box, detail = _locate(context, argv.image, _session(context), _mode(argv.custom_recognition_param))
+            box, detail = _locate(context, argv.image, _session(context), param_mode(argv.custom_recognition_param))
             return CustomRecognition.AnalyzeResult(box=box, detail=detail)
         except Exception as error:
             return CustomRecognition.AnalyzeResult(box=None, detail={"reason": "upgrade_recognition_error", "error": str(error)})
@@ -266,7 +280,7 @@ class DailyCharacterUpgradeAction(CustomAction):
     def run(self, context, argv):
         try:
             session = _session(context)
-            mode = _mode(argv.custom_action_param)
+            mode = param_mode(argv.custom_action_param)
             if mode in {"skip", "pending_expired"}:
                 session.stopped = ("强化提交响应未能确认，保留已提交额度并停止补点" if session.pending
                                    else "未找到可用的未满级角色、最低级药水或可靠页面")
