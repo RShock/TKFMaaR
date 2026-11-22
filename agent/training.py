@@ -114,14 +114,14 @@ def _percent(text):
 def _page(context, image):
     if _find(context, image, "PromptTitle"):
         return None
-    header = _find(context, image, "DetailTitle")
-    if not header:
-        return None
     common = _find(context, image, "CommonSelected")
     event = _find(context, image, "EventSelected")
     if bool(common) == bool(event):
         return None
-    return ("common" if common else "event"), int(header.box[1]) - 949
+    # The title is translucent over the animated character. The selected tab
+    # has a stable plate and is also the anchor for the item rows below it.
+    selected = common if common else event
+    return ("common" if common else "event"), int(selected.box[1]) - 950
 
 
 def _snapshot(context, image, tab, shift):
@@ -205,6 +205,18 @@ def _safe_remaining(progress, bounds):
     return max(0, (19999 - 2 * progress) * bounds[0] // 20000 + 1)
 
 
+def _remaining_text(progress, bounds, planned=0):
+    if progress >= 10000:
+        return "调教完成"
+    low = _safe_remaining(progress, bounds) - planned
+    # The lower edge of the displayed percentage gives the largest possible gap.
+    high = min(bounds[1], (20001 - 2 * progress) * bounds[1] // 20000) - planned
+    if high == 0:
+        return "调教完成"
+    points = str(low) if low == high else f"{low}–{high}"
+    return f"离调教完成还差{points}点"
+
+
 def _settle(session, snapshot):
     pending = session.pending
     item = snapshot["items"][pending["index"]]
@@ -245,7 +257,8 @@ def _settle(session, snapshot):
         session,
         f"核对本批：发出{pending['sent']}次，库存{pending['stock']}→{item['count']}，实际使用{consumed}个，"
         f"进度{pending['progress'] / 100:.2f}%→{snapshot['progress'] / 100:.2f}%；"
-        f"漏点{pending['sent'] - consumed}次，重新计算后再补，本轮已确认{session.confirmed}次。",
+        f"{_remaining_text(snapshot['progress'], pending['capacity'])}；"
+        f"漏点{pending['sent'] - consumed}次，本轮已确认{session.confirmed}次。",
     )
     if session.zero_batches >= 3:
         session.stop = "连续三批没有实际消耗，停止补点"
@@ -343,12 +356,15 @@ def _step(context, image, session):
         "time": time.monotonic(), "sent": 0,
     }
     session.pending = pending
+    gain = count * item["value"]
+    item_label = f"{'通用' if tab == 'common' else '活动'}第{item['index'] + 1}格道具"
+    after = _remaining_text(snapshot["progress"], bounds, gain)
     _log(
         session,
-        f"第{session.room}房，进度{snapshot['progress'] / 100:.2f}%，上限估计{_estimate(bounds)}"
-        f"（整数范围{bounds[0]}–{bounds[1]}），剩余至少{remaining}点；"
-        f"选择{'通用' if tab == 'common' else '活动'}第{item['index'] + 1}格，单个+{item['value']}，"
-        f"库存{item['count']}，调教点{snapshot['energy']}；计划连点{count}次，最多增加{count * item['value']}点。",
+        f"第{session.room}房计划用{count}个{item_label}（单个+{item['value']}，合计+{gain}点）。"
+        f"按计划用完后{after}。当前进度{snapshot['progress'] / 100:.2f}%，"
+        f"上限估计{_estimate(bounds)}（整数范围{bounds[0]}–{bounds[1]}），"
+        f"库存{item['count']}，调教点{snapshot['energy']}。",
     )
     # One bounded resource-input batch, never a page-navigation loop. This point
     # stays outside observed modal controls if a prompt arrives during the batch.

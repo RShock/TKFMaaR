@@ -33,7 +33,7 @@
             "type": "TemplateMatch",
             "param": {
                 "template": [
-                    "DailyTraining/MainEntry720.png"
+                    "Common/MainTrainingButton720.png"
                 ],
                 "roi": [
                     575,
@@ -302,18 +302,12 @@
     },
     "DailyTrainingSelectConfiguredItem": {
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "Or",
             "param": {
-                "template": [
-                    "DailyTraining/DetailTitle720.png"
-                ],
-                "roi": [
-                    105,
-                    930,
-                    210,
-                    80
-                ],
-                "threshold": 0.8
+                "any_of": [
+                    "__DailyTrainingCommonSelected",
+                    "__DailyTrainingEventSelected"
+                ]
             }
         },
         "next": [
@@ -409,18 +403,12 @@
     },
     "DailyTrainingReturnRoomListFromDetailFallback": {
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "Or",
             "param": {
-                "template": [
-                    "DailyTraining/DetailTitle720.png"
-                ],
-                "roi": [
-                    105,
-                    930,
-                    210,
-                    80
-                ],
-                "threshold": 0.8
+                "any_of": [
+                    "__DailyTrainingCommonSelected",
+                    "__DailyTrainingEventSelected"
+                ]
             }
         },
         "action": {
@@ -455,18 +443,12 @@
     },
     "DailyTrainingReturnRoomListFromDetail": {
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "Or",
             "param": {
-                "template": [
-                    "DailyTraining/DetailTitle720.png"
-                ],
-                "roi": [
-                    105,
-                    930,
-                    210,
-                    80
-                ],
-                "threshold": 0.8
+                "any_of": [
+                    "__DailyTrainingCommonSelected",
+                    "__DailyTrainingEventSelected"
+                ]
             }
         },
         "action": {
@@ -576,17 +558,19 @@
     },
     "DailyTrainingSelectCommonTab": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "^通用$"
+                "template": [
+                    "DailyTraining/CommonTabCommonSelected720.png",
+                    "DailyTraining/CommonTabEventSelected720.png"
                 ],
                 "roi": [
                     400,
                     935,
                     115,
                     75
-                ]
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
@@ -608,17 +592,19 @@
     },
     "DailyTrainingSelectEventTab": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "^活动$"
+                "template": [
+                    "DailyTraining/EventTabCommonSelected720.png",
+                    "DailyTraining/EventTabEventSelected720.png"
                 ],
                 "roi": [
                     525,
                     935,
                     115,
                     75
-                ]
+                ],
+                "threshold": 0.85
             }
         },
         "action": {
@@ -663,18 +649,12 @@
     },
     "DailyTrainingClickCommonItem": {
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "Or",
             "param": {
-                "template": [
-                    "DailyTraining/DetailTitle720.png"
-                ],
-                "roi": [
-                    105,
-                    930,
-                    210,
-                    80
-                ],
-                "threshold": 0.8
+                "any_of": [
+                    "__DailyTrainingCommonSelected",
+                    "__DailyTrainingEventSelected"
+                ]
             }
         },
         "next": [
@@ -683,18 +663,12 @@
     },
     "DailyTrainingClickEventItem": {
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "Or",
             "param": {
-                "template": [
-                    "DailyTraining/DetailTitle720.png"
-                ],
-                "roi": [
-                    105,
-                    930,
-                    210,
-                    80
-                ],
-                "threshold": 0.8
+                "any_of": [
+                    "__DailyTrainingCommonSelected",
+                    "__DailyTrainingEventSelected"
+                ]
             }
         },
         "next": [
@@ -888,18 +862,12 @@
     },
     "__DailyTrainingDetailTitle": {
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "Or",
             "param": {
-                "template": [
-                    "DailyTraining/DetailTitle720.png"
-                ],
-                "roi": [
-                    105,
-                    930,
-                    210,
-                    80
-                ],
-                "threshold": 0.8
+                "any_of": [
+                    "__DailyTrainingCommonSelected",
+                    "__DailyTrainingEventSelected"
+                ]
             }
         }
     },
@@ -908,7 +876,7 @@
             "type": "TemplateMatch",
             "param": {
                 "template": [
-                    "DailyTraining/CommonSelected720.png"
+                    "DailyTraining/CommonTabCommonSelected720.png"
                 ],
                 "roi": [
                     390,
@@ -925,7 +893,7 @@
             "type": "TemplateMatch",
             "param": {
                 "template": [
-                    "DailyTraining/EventSelected720.png"
+                    "DailyTraining/EventTabEventSelected720.png"
                 ],
                 "roi": [
                     520,
@@ -974,33 +942,37 @@
     },
     "__DailyTrainingCommonTab": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "^通用$"
+                "template": [
+                    "DailyTraining/CommonTabCommonSelected720.png",
+                    "DailyTraining/CommonTabEventSelected720.png"
                 ],
                 "roi": [
                     400,
                     935,
                     115,
                     75
-                ]
+                ],
+                "threshold": 0.85
             }
         }
     },
     "__DailyTrainingEventTab": {
         "recognition": {
-            "type": "OCR",
+            "type": "TemplateMatch",
             "param": {
-                "expected": [
-                    "^活动$"
+                "template": [
+                    "DailyTraining/EventTabCommonSelected720.png",
+                    "DailyTraining/EventTabEventSelected720.png"
                 ],
                 "roi": [
                     525,
                     935,
                     115,
                     75
-                ]
+                ],
+                "threshold": 0.85
             }
         }
     },
@@ -1174,18 +1146,12 @@
     },
     "DailyTrainingResumeDetail": {
         "recognition": {
-            "type": "TemplateMatch",
+            "type": "Or",
             "param": {
-                "template": [
-                    "DailyTraining/DetailTitle720.png"
-                ],
-                "roi": [
-                    105,
-                    930,
-                    210,
-                    80
-                ],
-                "threshold": 0.8
+                "any_of": [
+                    "__DailyTrainingCommonSelected",
+                    "__DailyTrainingEventSelected"
+                ]
             }
         },
         "next": [

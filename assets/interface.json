@@ -121,8 +121,7 @@
                 "调教道具范围"
             ],
             "doc": [
-                "筛选可调教角色，按当前房间实际加成和进度计算安全批次；连点后核对库存、点数及进度，再补漏点。",
-                "禁止桃子状最高级及高价值道具，不购买、不补充能量。数字不明确或可能溢出时停止消耗。"
+                "按设置的目标使用已有点数和道具。助手会先计算还能用几个道具，避免因进度溢出浪费材料。点数或安全可用的道具不足时会停止。桃子和高价值道具会保留。"
             ]
         },
         {
@@ -600,7 +599,6 @@
             "cases": [
                 {
                     "name": "指定次数",
-                    "description": "按库存实际减少数核对指定次数，漏点重新计算后补；不足或可能溢出时停止。",
                     "option": [
                         "指定调教次数"
                     ],
@@ -614,7 +612,6 @@
                 },
                 {
                     "name": "全部点数",
-                    "description": "按首次识别到的现有点数规划，分批连点并核对；不补充资源，不承诺耗尽无法安全使用的点数。",
                     "pipeline_override": {
                         "DailyTrainingClickCenterStart": {
                             "next": [
@@ -648,7 +645,6 @@
             "cases": [
                 {
                     "name": "优先活动道具",
-                    "description": "优先使用活动栏道具，不足时再使用通用栏道具。",
                     "pipeline_override": {
                         "DailyTrainingConfigItemScope": {
                             "recognition": {
@@ -679,7 +675,6 @@
                 },
                 {
                     "name": "优先通用道具",
-                    "description": "优先使用通用栏道具，不足时再使用活动栏道具。",
                     "pipeline_override": {
                         "DailyTrainingConfigItemScope": {
                             "recognition": {
@@ -710,7 +705,6 @@
                 },
                 {
                     "name": "活动和通用都可",
-                    "description": "两个栏位都允许使用，当前实现优先扫描活动栏。",
                     "pipeline_override": {
                         "DailyTrainingConfigItemScope": {
                             "recognition": {
@@ -747,7 +741,6 @@
             "cases": [
                 {
                     "name": "Yes",
-                    "description": "兼容旧配置的已停用选项；桃子及高价值道具始终禁用。",
                     "pipeline_override": {
                         "DailyTrainingConfigAllowRare": {
                             "enabled": false
@@ -756,7 +749,6 @@
                 },
                 {
                     "name": "No",
-                    "description": "兼容旧配置的已停用选项；桃子及高价值道具始终禁用。",
                     "pipeline_override": {
                         "DailyTrainingConfigAllowRare": {
                             "enabled": false
