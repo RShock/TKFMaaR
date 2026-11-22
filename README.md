@@ -9,13 +9,13 @@
 
 基于 [MaaFramework](https://github.com/MaaXYZ/MaaFramework) 的「天下布魔」日常自动化助手
 
-RShock 维护版本，当前版本 **1.2**，在原 TKFMaa 项目基础上独立维护。
+RShock 维护版本，当前发布版本 **2.0**，在原 TKFMaa 项目基础上独立维护。
 
 </div>
 
 ## 安装与使用
 
-1. 从 [RShock/TKFMaaR Releases](https://github.com/RShock/TKFMaaR/releases/latest) 下载对应系统的完整压缩包并解压，普通 Windows 电脑选择 `TKFMaaR-win-x86_64-v1.2.zip`
+1. 从 [RShock/TKFMaaR Releases](https://github.com/RShock/TKFMaaR/releases/latest) 下载对应系统的完整压缩包并解压，普通 Windows 电脑选择 `TKFMaaR-win-x86_64-v2.0.zip`
 2. 运行 `DependencySetup_依赖库安装_win.bat`
 3. 运行 `MFAAvalonia.exe`
 
@@ -23,7 +23,7 @@ RShock 维护版本，当前版本 **1.2**，在原 TKFMaa 项目基础上独立
 
 1.0 的部分版本曾错误关闭并锁定自动检查，无法通过远程发布自动解除；这些用户须手动下载并安装一次 1.1 或更新版本。安装后会恢复检查开关，之后保留用户自己的开关选择。
 
-1.2加入Windows首次打开的[旧版配置迁移向导](docs/zh_cn/tasks/config_migration.md)：打开旧助手后自动检测，唯一来源无需选择，点击导入即可继承 `config`、`appsettings.json` 和自定义关卡截图；多个来源时才需选择。可取消且只自动提示一次，导入前备份新版资料，旧目录保留。手动升级也须保留这三部分，不能只复制 `config`。
+2.0 采用[同目录自动更新与配置继承](docs/zh_cn/tasks/config_migration.md)：保留 `config/`、`appsettings.json`，自定义关卡截图迁入 `userdata/resource/image/UserStages/`，仅新增设置补默认值，不再自动弹旧助手向导。从 1.5 更新到 2.0 时须关闭助手后把完整包解压到原文件夹，保留旧数据；此后可使用程序内更新。跨目录导入向导仅作主动选择的工具。
 
 ## 注意事项
 

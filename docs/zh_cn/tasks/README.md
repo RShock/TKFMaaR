@@ -10,7 +10,7 @@
 ```mermaid
 flowchart TD
     Main[主界面]
-    Login[开始队列时自动检测并按需启动游戏] --> Main
+    Login[启动游戏任务：可先启动MuMu再启动游戏] --> Main
     Main --> Friend[好友体力]
     Main --> Rewards[任务奖励]
     Main --> Alchemy[炼金订单]
@@ -26,12 +26,13 @@ flowchart TD
 
 | 功能     | 入口节点                  | 风险 | 文档                                |
 | -------- | ------------------------- | ---- | ----------------------------------- |
-| 自动启动游戏 | `GameLoginLaunch`          | 低   | [启动游戏](game_login.md)           |
+| 启动游戏 | `GameLoginStart` / `GameLoginLaunch` | 低 | [启动游戏](game_login.md) |
 | 商城购买 | `DailyShopStart`          | 高   | [商城购买](daily_shop.md)           |
 | 领取体力 | `DailyFriendStaminaStart` | 低   | [领取体力](daily_friend_stamina.md) |
 | 炼金订单 | `DailyAlchemyOrdersStart` | 中   | [炼金订单](daily_alchemy_orders.md) |
 | 每日派遣 | `DailyDispatchStart`      | 中   | [每日派遣](daily_dispatch.md)       |
 | 消耗体力 | `DailyStaminaStart`       | 高   | [消耗体力](daily_stamina.md)        |
+| 每日政务前置 | `DailyAffairsRequired` | 高 | [三项最高关扫荡](daily_affairs.md)，位于消耗体力之前 |
 | 调教     | `DailyTrainingStart`      | 高   | [调教](daily_training.md)           |
 | 全境征才 | `DailyRecruitmentStart`   | 高   | [全境征才](daily_recruitment.md)    |
 | 奖励领取 | `DailyTaskRewardsStart`   | 中   | [奖励领取](daily_task_rewards.md)，含[角色强化两次](daily_character_upgrade.md) |

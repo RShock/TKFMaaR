@@ -1,12 +1,13 @@
 {
     "interface_version": 2,
     "name": "TKFMaaR",
+    "icon": "./logo.png",
     "description": "天下布魔小助手~",
     "contact": "https://github.com/RShock/TKFMaaR/issues",
     "license": "MIT",
-    "welcome": "",
+    "welcome": "# 版本公告\n\n第一个可公开测试版发布。",
     "github": "https://github.com/RShock/TKFMaaR",
-    "version": "1.5",
+    "version": "2.0",
     "controller": [
         {
             "name": "安卓端",
@@ -143,6 +144,30 @@
         }
     ],
     "option": {
+        "定时任务允许自动启动模拟器": {
+            "type": "switch",
+            "default_case": "No",
+            "cases": [
+                {
+                    "name": "Yes"
+                },
+                {
+                    "name": "No"
+                }
+            ]
+        },
+        "定时任务执行完毕后关闭模拟器": {
+            "type": "switch",
+            "default_case": "No",
+            "cases": [
+                {
+                    "name": "Yes"
+                },
+                {
+                    "name": "No"
+                }
+            ]
+        },
         "体力消耗关卡": {
             "type": "select",
             "default_case": "日常调教本",
@@ -1090,6 +1115,44 @@
                 }
             ]
         },
+        "自动最速派遣": {
+            "type": "switch",
+            "default_case": "No",
+            "cases": [
+                {
+                    "name": "Yes"
+                },
+                {
+                    "name": "No"
+                }
+            ]
+        },
+        "定时执行所有日常任务": {
+            "type": "switch",
+            "default_case": "No",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "option": [
+                        "日常执行时间"
+                    ]
+                },
+                {
+                    "name": "No"
+                }
+            ]
+        },
+        "日常执行时间": {
+            "type": "input",
+            "inputs": [
+                {
+                    "name": "时间",
+                    "default": "17:30",
+                    "verify": "^\\s*(?:[01]\\d|2[0-3]):[0-5]\\d(?:\\s*[,，]\\s*(?:[01]\\d|2[0-3]):[0-5]\\d)*\\s*$",
+                    "pattern_msg": "请输入 24 小时制时间，例如 17:30。多个时间用逗号隔开。"
+                }
+            ]
+        },
         "交易所材料": {
             "type": "checkbox",
             "label": "交易所 · 材料",
@@ -1345,68 +1408,6 @@
                 }
             ]
         },
-        "定时任务允许自动启动模拟器": {
-            "type": "switch",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes"
-                },
-                {
-                    "name": "No"
-                }
-            ]
-        },
-        "定时任务执行完毕后关闭模拟器": {
-            "type": "switch",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes"
-                },
-                {
-                    "name": "No"
-                }
-            ]
-        },
-        "自动最速派遣": {
-            "type": "switch",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes"
-                },
-                {
-                    "name": "No"
-                }
-            ]
-        },
-        "定时执行所有日常任务": {
-            "type": "switch",
-            "default_case": "No",
-            "cases": [
-                {
-                    "name": "Yes",
-                    "option": [
-                        "日常执行时间"
-                    ]
-                },
-                {
-                    "name": "No"
-                }
-            ]
-        },
-        "日常执行时间": {
-            "type": "input",
-            "inputs": [
-                {
-                    "name": "时间",
-                    "default": "17:30",
-                    "verify": "^\\s*(?:[01]\\d|2[0-3]):[0-5]\\d(?:\\s*[,，]\\s*(?:[01]\\d|2[0-3]):[0-5]\\d)*\\s*$",
-                    "pattern_msg": "请输入 24 小时制时间，例如 17:30。多个时间用逗号隔开。"
-                }
-            ]
-        },
         "每日政务战争演习": {
             "type": "switch",
             "label": "扫荡战争演习",
@@ -1488,6 +1489,5 @@
                 }
             ]
         }
-    },
-    "icon": "./logo.png"
+    }
 }
