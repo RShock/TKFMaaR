@@ -18,7 +18,7 @@ from common import safe_json_loads
 
 @dataclass
 class AlchemySession:
-    attempts: dict[tuple[int, int], int] = field(default_factory=dict)
+    attempts: dict[tuple[int, int, int], int] = field(default_factory=dict)
     total: int | None = None
     remaining: int | None = None
     navigation_clicked_at: dict[str, float] = field(default_factory=dict)
@@ -57,17 +57,25 @@ def _delivery(context, image):
         return None, {**detail, "reason": "no_orders_or_invalid_count"}
     if session.total is not None and (total != session.total or remaining > session.remaining):
         return None, {**detail, "reason": "order_count_changed_unexpectedly"}
-    used = session.attempts.get((total, remaining), 0)
-    if used >= ATTEMPT_LIMIT:
-        return None, {**detail, "reason": "current_order_attempt_limit", "used": used}
     marker = _hit(context, image, "__DailyAlchemyOrdersDeliverable")
     if marker is None or marker.box is None:
         return None, {**detail, "reason": "no_deliverable_marker"}
-    x, y, width, height = map(int, marker.box)
-    if width <= 0 or height <= 0:
-        return None, {**detail, "reason": "invalid_marker_box"}
-    point = (x + width // 2 + 67, y + height // 2 + 76)
-    return (point[0] - 8, point[1] - 8, 16, 16), {**detail, "attempt": used + 1, "point": point}
+
+    # The strip is not scrolled by this task. Count retries by visible card
+    # position within the same order count, so one stalled card cannot block its neighbors.
+    candidates = []
+    for result in marker.filtered_results:
+        x, y, width, height = map(int, result.box)
+        if width <= 0 or height <= 0:
+            continue
+        slot = x // 180
+        used = session.attempts.get((total, remaining, slot), 0)
+        if used < ATTEMPT_LIMIT:
+            candidates.append((used, slot, x + width // 2 + 67, y + height // 2 + 76))
+    if not candidates:
+        return None, {**detail, "reason": "visible_card_attempt_limit"}
+    used, slot, x, y = min(candidates)
+    return (x - 8, y - 8, 16, 16), {**detail, "attempt": used + 1, "slot": slot, "point": (x, y)}
 
 
 @AgentServer.custom_action("DailyAlchemyInitialize")
@@ -111,12 +119,13 @@ class DailyAlchemyClickCurrent(CustomAction):
             elif target == "DailyAlchemyOrdersOpenDrawer":
                 ready = _hit(context, image, target)
                 box = (*DRAWER_POINT, 1, 1) if ready else None
-                detail = {}
+                detail = {"reason": "drawer_closed_guard_not_matched"}
             else:
                 result = _hit(context, image, target)
-                box, detail = (result.box if result else None), {}
+                box = result.box if result else None
+                detail = {"reason": "drawer_icon_or_home_guard_not_matched"}
             if box is None:
-                print("[炼金] 点击前画面或订单状态已变化，本次不点击，交回页面识别。", flush=True)
+                print(f"[炼金] 点击前复核未通过，目标={target}，原因={detail.get('reason')}，等待重新识别。", flush=True)
                 return True
             x, y, width, height = map(int, box)
             if width <= 0 or height <= 0:
@@ -126,11 +135,16 @@ class DailyAlchemyClickCurrent(CustomAction):
                 previous = session.remaining
                 remaining, total = detail["remaining"], detail["total"]
                 # Reserve before issuing input; uncertain responses cannot replenish retries.
-                session.attempts[(total, remaining)] = detail["attempt"]
+                slot = detail["slot"]
+                session.attempts[(total, remaining, slot)] = detail["attempt"]
                 session.total, session.remaining = total, remaining
                 if previous is not None and remaining < previous:
                     print(f"[炼金] 已确认订单减少：{previous} → {remaining}。", flush=True)
-                print(f"[炼金] 剩余订单{remaining}/{total}，点击订单中心，本订单第{detail['attempt']}/3次尝试。", flush=True)
+                print(
+                    f"[炼金] 剩余订单{remaining}/{total}，点击可见第{slot + 1}栏卡片中心{detail['point']}，"
+                    f"本栏第{detail['attempt']}/{ATTEMPT_LIMIT}次尝试。",
+                    flush=True,
+                )
             else:
                 session = _session(context)
                 now = time.monotonic()
@@ -145,6 +159,8 @@ class DailyAlchemyClickCurrent(CustomAction):
                         "（720×1280基准；宽6.25%、高49.0625%），随后重新识别炼金图标。",
                         flush=True,
                     )
+                else:
+                    print(f"[炼金] 已复核展开的抽屉，点击炼金图标中心({x + width // 2}, {y + height // 2})。", flush=True)
             result = context.run_action_direct(JActionType.Click, JClick(target=(x + width // 2, y + height // 2)))
             return result is not None and result.success
         except Exception as error:

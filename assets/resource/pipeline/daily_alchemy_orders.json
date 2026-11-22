@@ -45,7 +45,7 @@
                 "custom_recognition": "TaskCompletionGuard",
                 "custom_recognition_param": {
                     "required": [
-                        "CommonMainReady"
+                        "__DailyAlchemyOrdersHomeReady"
                     ],
                     "absent": [
                         "__DailyAlchemyOrdersDrawerIcon",
@@ -85,7 +85,7 @@
             "type": "And",
             "param": {
                 "all_of": [
-                    "CommonMainReady",
+                    "__DailyAlchemyOrdersHomeReady",
                     "__DailyAlchemyOrdersDrawerIcon"
                 ],
                 "box_index": 1
@@ -205,7 +205,7 @@
             "DailyAlchemyOrdersRetryScan"
         ],
         "focus": {
-            "Node.Action.Starting": "炼金：复核当前剩余订单和可交付标记，点击卡片中心；同一剩余订单数最多尝试三次，订单实际减少后才处理下一单。"
+            "Node.Action.Starting": "炼金：复核订单数和可交付标记，点击卡片中心。订单数没下降时优先尝试其他可见卡片。"
         }
     },
     "DailyAlchemyOrdersAbortToMain": {
@@ -275,7 +275,7 @@
             "type": "And",
             "param": {
                 "all_of": [
-                    "CommonMainReady"
+                    "__DailyAlchemyOrdersHomeReady"
                 ],
                 "box_index": 0
             }
@@ -440,6 +440,61 @@
                         "__DailyAlchemyOrdersDetailClose"
                     ]
                 }
+            }
+        }
+    },
+    "__DailyAlchemyOrdersHomeReady": {
+        "recognition": {
+            "type": "Or",
+            "param": {
+                "any_of": [
+                    "CommonMainReady",
+                    "__DailyAlchemyOrdersHomeAlt"
+                ]
+            }
+        }
+    },
+    "__DailyAlchemyOrdersHomeAlt": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": [
+                        "__DailyAlchemyOrdersHomeExpedition",
+                        "__DailyAlchemyOrdersHomeCastle"
+                    ],
+                    "absent": [
+                        "TkfmRecoveryReturnTitleTarget",
+                        "TkfmRecoverySessionExpiredTarget",
+                        "TkfmRecoveryBackButtonTarget",
+                        "GameCloseGift",
+                        "GameCloseAnnouncement",
+                        "GameCloseEventSignIn",
+                        "TkfmRecoveryMonthlyCardTarget",
+                        "TkfmRecoveryExitGameTarget"
+                    ]
+                }
+            }
+        }
+    },
+    "__DailyAlchemyOrdersHomeExpedition": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "DailyAlchemyOrders/HomeExpedition720.png",
+                "roi": [480, 820, 240, 210],
+                "threshold": 0.9
+            }
+        }
+    },
+    "__DailyAlchemyOrdersHomeCastle": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "DailyAlchemyOrders/HomeCastleSelected720.png",
+                "roi": [55, 1165, 145, 85],
+                "threshold": 0.9
             }
         }
     },
