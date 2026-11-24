@@ -31,7 +31,6 @@ using MFAAvalonia.Helper.ValueType;
 using MFAAvalonia.ViewModels.Other;
 using MFAAvalonia.ViewModels.Pages;
 using MFAAvalonia.Views.Pages;
-using MFAAvalonia.Views.UserControls.Dashboard;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -110,7 +109,7 @@ public sealed class TkfmDispatchSchedule : IMaaCustomAction
                 });
             else if (completed && countdown != null)
             {
-                try { clock.SaveCountdown(processor, new JObject(), new JObject(), countdown); }
+                try { clock.SaveCountdown(processor, new JObject(), new JObject(), countdown, deferUntilCleanup: true); }
                 catch (Exception ex) { processor.AddLog("[自动最速派遣] 未能保存下次派遣时间：" + ex.Message, "OrangeRed"); }
             }
             return completed;
@@ -259,9 +258,10 @@ internal sealed class DispatchClock : IDisposable
         }
     }
 
-    internal void SaveCountdown(MaaProcessor processor, JObject config, JObject overrides, string due)
+    internal void SaveCountdown(MaaProcessor processor, JObject config, JObject overrides, string due,
+        bool deferUntilCleanup = false, string expectedJobId = null)
     {
-        ArmAt(processor, config, overrides, DateTimeOffset.Parse(due), true);
+        ArmAt(processor, config, overrides, DateTimeOffset.Parse(due), true, deferUntilCleanup, expectedJobId);
     }
     private readonly string session = Guid.NewGuid().ToString("N");
     private readonly HashSet<string> working = new HashSet<string>();
@@ -272,6 +272,7 @@ internal sealed class DispatchClock : IDisposable
     private const string AutoStart = "定时任务允许自动启动模拟器";
     private const string AutoClose = "定时任务执行完毕后关闭模拟器";
     private const string Dispatch = "自动最速派遣";
+    private const string DispatchEntry = "DailyDispatchStart";
     private const string Daily = "定时执行所有日常任务";
     private const string DailyPolicy = "TkfmDailyQueuePolicy";
     private readonly Dictionary<string, DateTime> pendingDaily = new Dictionary<string, DateTime>();
@@ -280,6 +281,9 @@ internal sealed class DispatchClock : IDisposable
     private readonly HashSet<string> invalidTimes = new HashSet<string>();
     private readonly HashSet<StackPanel> testPanels = new HashSet<StackPanel>();
     private readonly Dictionary<ToggleSwitch, EventHandler<RoutedEventArgs>> dispatchToggles = new();
+    private readonly Dictionary<Grid, (DockPanel Host, TextBlock Title, Border Clock)> dispatchClocks = new();
+    private readonly HashSet<Button> dispatchCancelButtons = new();
+    private readonly Dictionary<ComboBox, (string Text, IDisposable Placeholder, IDisposable Tip)> controllerLabels = new();
     private const string DispatchTimePrefix = "下次派遣时间：";
     private static readonly Regex DispatchStatusLine = new Regex($"(?m)^{DispatchTimePrefix}[^\r\n]*");
     private readonly HashSet<DragItemViewModel> startupTasks = new HashSet<DragItemViewModel>();
@@ -304,9 +308,15 @@ internal sealed class DispatchClock : IDisposable
 
     internal static bool AutoDispatchEnabled(MaaProcessor processor) => Enabled(processor, Dispatch);
 
-    private static MaaInterface.MaaInterfaceSelectOption Option(MaaProcessor processor, string name) =>
-        processor.ViewModel?.TaskItemViewModels.FirstOrDefault(row => row.InterfaceItem?.Entry == "GameLoginStart")
-            ?.InterfaceItem?.Option?.FirstOrDefault(option => option.Name == name);
+    private static DragItemViewModel DispatchTask(MaaProcessor processor) =>
+        processor.ViewModel?.TaskItemViewModels.FirstOrDefault(row => row.InterfaceItem?.Entry == DispatchEntry);
+
+    private static MaaInterface.MaaInterfaceSelectOption Option(MaaProcessor processor, string name)
+    {
+        var task = name == Dispatch ? DispatchTask(processor) : processor.ViewModel?.TaskItemViewModels
+            .FirstOrDefault(row => row.InterfaceItem?.Entry == "GameLoginStart");
+        return task?.InterfaceItem?.Option?.FirstOrDefault(option => option.Name == name);
+    }
 
     private static bool Enabled(MaaProcessor processor, string name) => Option(processor, name)?.Index == 0;
 
@@ -346,7 +356,8 @@ internal sealed class DispatchClock : IDisposable
         }
     }
 
-    private void ArmAt(MaaProcessor processor, JObject config, JObject overrides, DateTimeOffset due, bool countdown)
+    private void ArmAt(MaaProcessor processor, JObject config, JObject overrides, DateTimeOffset due, bool countdown,
+        bool deferUntilCleanup = false, string expectedJobId = null)
     {
         bool calculatedOnly = countdown && !AutoDispatchEnabled(processor);
         var job = new JObject
@@ -358,24 +369,47 @@ internal sealed class DispatchClock : IDisposable
             ["handled"] = calculatedOnly
         };
         if (!calculatedOnly) job.Merge(DispatchDevice.Snapshot(processor));
+        bool deferred = false;
         lock (sync)
         {
             var old = Read(processor);
-            if (new[] { "launching", "queued", "running" }.Contains((string)old?["state"]))
+            if (expectedJobId != null && (string)old?["id"] != expectedJobId) return;
+            string state = (string)old?["state"];
+            if (state is "launching" or "queued" or "running")
                 throw new InvalidOperationException("已有定时派遣正在启动或执行，请先停止当前任务");
-            if ((bool?)old?["policy_saved"] == true
-                || ((string)old?["state"] == "succeeded" && (bool?)old?["handled"] != true))
-                throw new InvalidOperationException("上一轮正在收尾，请稍后重新预约");
-            Save(processor, job);
+            if ((state is "succeeded" or "failed" or "cancelled") && (bool?)old["handled"] != true)
+            {
+                if (!deferUntilCleanup)
+                    throw new InvalidOperationException("上一轮正在收尾，请稍后重新预约");
+                old["next_reservation"] = job;
+                Save(processor, old);
+                deferred = true;
+            }
+            else
+            {
+                if ((bool?)old?["policy_saved"] == true)
+                    throw new InvalidOperationException("上一轮正在收尾，请稍后重新预约");
+                Save(processor, job);
+            }
         }
-        string time = due.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-        if (calculatedOnly)
+        if (deferred)
+        {
+            string time = due.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+            processor.AddLog("[智能派遣] 已保存下次派遣时间 " + time + "，上一轮收尾后生效。", changeColor: false);
+        }
+        else LogReservation(processor, job);
+    }
+
+    private static void LogReservation(MaaProcessor processor, JObject job)
+    {
+        string time = DateTimeOffset.Parse((string)job["due"]).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+        if ((string)job["state"] == "calculated")
         {
             processor.AddLog("[智能派遣] 已计算下次派遣时间 " + time + "。开启自动最速派遣后才会执行。", changeColor: false);
             return;
         }
-        processor.AddLog((countdown ? "[智能派遣] 已根据最长倒计时预约 " : "[自动最速派遣] 已登记首次派遣 ")
-            + time + "（电脑本地时间）。助手须保持运行，可在日志标题栏取消预约。", changeColor: false);
+        processor.AddLog(((bool?)job["from_countdown"] == true ? "[智能派遣] 已根据最长倒计时预约 " : "[自动最速派遣] 已登记首次派遣 ")
+            + time + "（电脑本地时间）。助手须保持运行，可在「每日派遣」设置中取消自动派遣。", changeColor: false);
     }
 
     private static bool Busy(MaaProcessor processor) =>
@@ -461,8 +495,8 @@ internal sealed class DispatchClock : IDisposable
             }
             catch (Exception ex) { LoggerHelper.Error("TKFMaa 派遣调度：" + ex.Message); }
         }
+        RefreshControllerLabels();
         if (TaskListBusy()) return;
-        InstallCancelButton();
         RefreshDispatchUi();
         InstallLaunchTest();
     }
@@ -675,41 +709,151 @@ internal sealed class DispatchClock : IDisposable
 
     private void RefreshDispatchUi()
     {
-        var root = Instances.TopLevel;
-        if (root == null) return;
-        foreach (var toggle in dispatchToggles.Keys.Where(item => item.GetVisualRoot() == null).ToArray())
-            UnbindDispatchToggle(toggle);
-
-        foreach (var view in root.GetVisualDescendants().OfType<TaskQueueView>())
+        var views = Instances.TopLevel?.GetVisualDescendants().OfType<TaskQueueView>().ToArray()
+            ?? Array.Empty<TaskQueueView>();
+        var shownClocks = new HashSet<Grid>();
+        var shownButtons = new HashSet<Button>();
+        var shownToggles = new HashSet<ToggleSwitch>();
+        foreach (var view in views)
         {
             if (view.DataContext is not TaskQueueViewModel vm) continue;
-            foreach (var toggle in view.GetVisualDescendants().OfType<ToggleSwitch>().Where(t => t.Tag as string == Dispatch))
+            var processor = vm.Processor;
+            var task = DispatchTask(processor);
+            bool enabled = AutoDispatchEnabled(processor);
+            if (task == null) continue;
+
+            if (enabled)
             {
-                if (dispatchToggles.ContainsKey(toggle)) continue;
-                EventHandler<RoutedEventArgs> changed = (_, __) =>
+                foreach (var row in view.GetVisualDescendants().OfType<Grid>()
+                    .Where(grid => grid.Name == "ListGrid" && ReferenceEquals(grid.DataContext, task)).ToArray())
                 {
-                    if (disposed || view.DataContext is not TaskQueueViewModel current) return;
-                    var processor = current.Processor;
-                    if (toggle.IsChecked == true)
-                    {
-                        QueueFirstDispatch(processor);
-                    }
-                    else
-                    {
-                        var job = Read(processor);
-                        if ((string)job?["state"] == "launching" && operations.TryGetValue(processor.InstanceId, out var operation))
-                        {
-                            Change(processor, (string)job["id"], j => { j["state"] = "cancelled"; j["handled"] = true; });
-                            operation.Cancel();
-                        }
-                    }
-                    RefreshDispatchIntroduction(view, processor);
-                };
-                toggle.IsCheckedChanged += changed;
-                dispatchToggles.Add(toggle, changed);
+                    var titleGrid = row.Children.OfType<Grid>().FirstOrDefault(grid => Grid.GetColumn(grid) == 1);
+                    if (titleGrid != null && ShowDispatchClock(titleGrid, NextDispatchText(processor)))
+                        shownClocks.Add(titleGrid);
+                }
             }
-            RefreshDispatchIntroduction(view, vm.Processor);
+
+            var options = view.FindControl<StackPanel>("CommonOptionSettings");
+            var toggle = task.EnableSetting ? options?.GetVisualDescendants().OfType<ToggleSwitch>()
+                .FirstOrDefault(item => item.Tag as string == Dispatch) : null;
+            if (toggle != null)
+            {
+                shownToggles.Add(toggle);
+                if (!dispatchToggles.ContainsKey(toggle))
+                {
+                    EventHandler<RoutedEventArgs> changed = (_, __) =>
+                    {
+                        if (disposed || !ReferenceEquals(view.DataContext, vm) || !task.EnableSetting) return;
+                        if (toggle.IsChecked == true) QueueFirstDispatch(processor);
+                        else CancelAutomaticDispatch(processor);
+                        RefreshDispatchUi();
+                    };
+                    toggle.IsCheckedChanged += changed;
+                    dispatchToggles.Add(toggle, changed);
+                }
+                if (enabled)
+                {
+                    var button = options.Children.OfType<Button>().FirstOrDefault(dispatchCancelButtons.Contains);
+                    if (button == null)
+                    {
+                        button = new Button
+                        {
+                            Content = "点击能够取消掉每日派遣",
+                            Margin = new Thickness(0, 6, 0, 4),
+                            HorizontalAlignment = HorizontalAlignment.Left
+                        };
+                        button.Click += (_, __) =>
+                        {
+                            if (!disposed && ReferenceEquals(view.DataContext, vm) && task.EnableSetting)
+                                toggle.IsChecked = false; // Reuse native option storage and the switch handler.
+                        };
+                        options.Children.Add(button);
+                        dispatchCancelButtons.Add(button);
+                    }
+                    shownButtons.Add(button);
+                }
+            }
+            RefreshDispatchIntroduction(view, processor);
         }
+        foreach (var grid in dispatchClocks.Keys.Where(grid => !shownClocks.Contains(grid)).ToArray())
+            HideDispatchClock(grid);
+        foreach (var button in dispatchCancelButtons.Where(button => !shownButtons.Contains(button)).ToArray())
+            RemoveDispatchCancelButton(button);
+        foreach (var toggle in dispatchToggles.Keys.Where(toggle => !shownToggles.Contains(toggle)).ToArray())
+            UnbindDispatchToggle(toggle);
+    }
+
+    private void CancelAutomaticDispatch(MaaProcessor processor)
+    {
+        var job = Read(processor);
+        string state = (string)job?["state"];
+        if (state is "pending" or "launching")
+        {
+            Change(processor, (string)job["id"], current =>
+            {
+                current["state"] = state == "pending" && (bool?)current["from_countdown"] == true
+                    ? "calculated" : "cancelled";
+                current["handled"] = true;
+            });
+            if (state == "launching" && operations.TryGetValue(processor.InstanceId, out var operation))
+                operation.Cancel();
+        }
+        processor.AddLog("[定时派遣] 已关闭自动最速派遣。", changeColor: false);
+    }
+
+    private bool ShowDispatchClock(Grid grid, string tooltip)
+    {
+        if (!dispatchClocks.TryGetValue(grid, out var decoration))
+        {
+            var title = grid.Children.OfType<TextBlock>().FirstOrDefault(text => Grid.GetColumn(text) == 1);
+            if (title == null) return false;
+            var clockFace = new Avalonia.Controls.Shapes.Path
+            {
+                Data = Geometry.Parse("M 6,1 A 5,5 0 1 1 6,11 A 5,5 0 1 1 6,1 M 6,3 L 6,6 L 8,7"),
+                StrokeThickness = 1.2,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                IsHitTestVisible = false
+            };
+            clockFace.Bind(Avalonia.Controls.Shapes.Shape.StrokeProperty,
+                new Binding(nameof(TextBlock.Foreground)) { Source = title });
+            var clock = new Border
+            {
+                Background = Brushes.Transparent, Child = clockFace,
+                Width = 16, Height = 16, Margin = new Thickness(4, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            var host = new DockPanel
+            {
+                HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center,
+                LastChildFill = true
+            };
+            DockPanel.SetDock(clock, Dock.Right);
+            Grid.SetColumn(host, 1);
+            grid.Children.Remove(title);
+            host.Children.Add(clock);
+            host.Children.Add(title);
+            grid.Children.Add(host);
+            decoration = (host, title, clock);
+            dispatchClocks.Add(grid, decoration);
+        }
+        if (!Equals(ToolTip.GetTip(decoration.Clock), tooltip)) ToolTip.SetTip(decoration.Clock, tooltip);
+        return true;
+    }
+
+    private void HideDispatchClock(Grid grid)
+    {
+        var (host, title, _) = dispatchClocks[grid];
+        host.Children.Remove(title);
+        grid.Children.Remove(host);
+        grid.Children.Add(title);
+        dispatchClocks.Remove(grid);
+    }
+
+    private void RemoveDispatchCancelButton(Button button)
+    {
+        if (button.Parent is Panel parent) parent.Children.Remove(button);
+        dispatchCancelButtons.Remove(button);
     }
 
     private void UnbindDispatchToggle(ToggleSwitch toggle)
@@ -914,9 +1058,24 @@ internal sealed class DispatchClock : IDisposable
                 try { await CloseEmulator(processor, job, "[定时派遣] "); }
                 catch (Exception ex) { processor.AddLog("[定时派遣] 模拟器关闭失败：" + ex.Message, "OrangeRed"); }
             }
-            Change(processor, (string)job["id"], j => j["handled"] = true);
-            if ((string)job["state"] == "succeeded" && job["next_due"] != null)
-                SaveCountdown(processor, (JObject)job["config"], (JObject)job["overrides"], (string)job["next_due"]);
+            JObject deferred;
+            string id = (string)job["id"];
+            lock (sync)
+            {
+                var current = Read(processor);
+                if ((string)current?["id"] != id) return;
+                deferred = current["next_reservation"] as JObject;
+                if (deferred != null) Save(processor, deferred);
+                else
+                {
+                    current["handled"] = true;
+                    Save(processor, current);
+                }
+            }
+            if (deferred != null) LogReservation(processor, deferred);
+            else if ((string)job["state"] == "succeeded" && job["next_due"] != null)
+                SaveCountdown(processor, (JObject)job["config"], (JObject)job["overrides"], (string)job["next_due"],
+                    expectedJobId: id);
             else
                 processor.AddLog((string)job["state"] == "succeeded"
                     ? "[定时派遣] 本次预约已完成，未登记后续预约。"
@@ -948,38 +1107,43 @@ internal sealed class DispatchClock : IDisposable
         processor.AddLog(label + "任务完成，已请求关闭当前模拟器。", changeColor: false);
     }
 
-    private void InstallCancelButton()
+    private void RefreshControllerLabels()
     {
-        var root = Instances.TopLevel;
-        if (root == null) return;
-        foreach (var view in root.GetVisualDescendants().OfType<TaskQueueView>())
+        var shown = new HashSet<ComboBox>();
+        var views = Instances.TopLevel?.GetVisualDescendants().OfType<TaskQueueView>().ToArray()
+            ?? Array.Empty<TaskQueueView>();
+        foreach (var view in views)
         {
-            var vm = view.DataContext as TaskQueueViewModel;
-            if (vm == null) continue;
-            var header = view.FindControl<DashboardCard>("LogCard")?.HeaderActions as StackPanel;
-            if (header == null) continue;
-            var job = Read(vm.Processor);
-            var old = header.Children.OfType<Button>().FirstOrDefault(b => b.Name == "TkfmCancelDispatchReservation");
-            bool visible = job != null && new[] { "pending", "launching" }.Contains((string)job["state"]);
-            string caption = visible ? "取消定时派遣 " + DateTimeOffset.Parse((string)job["due"]).ToLocalTime().ToString("MM-dd HH:mm") : "";
-            if (old != null && visible && ReferenceEquals(old.Tag, this) && (string)old.Content == caption) continue;
-            if (old != null) header.Children.Remove(old);
-            if (!visible) continue;
-            var button = new Button
+            if (view.DataContext is not TaskQueueViewModel vm || !vm.IsConnected
+                || vm.CurrentController != MaaControllerTypes.Adb) continue;
+            var active = vm.Processor.Config.AdbDevice;
+            if (string.IsNullOrWhiteSpace(active.AdbSerial)) continue;
+            string name = string.IsNullOrWhiteSpace(active.Name) ? "ADB" : active.Name.Split('-')[0].Trim();
+            var index = DeviceDisplayConverter.GetFirstEmulatorIndex(active.Config);
+            string text = $"{name} ({active.AdbSerial})" + (index < 0 ? "" : $" [{index}]");
+            foreach (var box in view.GetVisualDescendants().OfType<ComboBox>().Where(box =>
+                ReferenceEquals(box.ItemsSource, vm.Devices) && box.SelectedItem == null))
             {
-                Name = "TkfmCancelDispatchReservation", Content = caption, Tag = this,
-                Padding = new Thickness(8, 3), MinHeight = 28
-            };
-            button.Click += (_, __) =>
-            {
-                var current = Read(vm.Processor);
-                if (current == null || !new[] { "pending", "launching" }.Contains((string)current["state"])) return;
-                if (operations.TryGetValue(vm.Processor.InstanceId, out var operation)) operation.Cancel();
-                Change(vm.Processor, (string)current["id"], j => j["state"] = "cancelled");
-                vm.Processor.AddLog("[定时派遣] 已取消本次预约。", changeColor: false);
-            };
-            header.Children.Insert(0, button);
+                // Selection can be empty while the processor still owns a connected controller.
+                // Show the active target without firing native selection, reconnect or discovery.
+                shown.Add(box);
+                if (controllerLabels.TryGetValue(box, out var current) && current.Text == text) continue;
+                RestoreControllerLabel(box);
+                var placeholder = box.SetValue(ComboBox.PlaceholderTextProperty, text, BindingPriority.Animation);
+                var tip = box.SetValue(ToolTip.TipProperty, text, BindingPriority.Animation);
+                controllerLabels.Add(box, (text, placeholder, tip));
+            }
         }
+        foreach (var box in controllerLabels.Keys.Where(box => !shown.Contains(box)).ToArray())
+            RestoreControllerLabel(box);
+    }
+
+    private void RestoreControllerLabel(ComboBox box)
+    {
+        if (!controllerLabels.TryGetValue(box, out var label)) return;
+        label.Tip?.Dispose();
+        label.Placeholder?.Dispose();
+        controllerLabels.Remove(box);
     }
 
     public void Dispose()
@@ -996,6 +1160,9 @@ internal sealed class DispatchClock : IDisposable
                 if (panel.Parent is StackPanel parent) parent.Children.Remove(panel);
             testPanels.Clear();
             foreach (var toggle in dispatchToggles.Keys.ToArray()) UnbindDispatchToggle(toggle);
+            foreach (var grid in dispatchClocks.Keys.ToArray()) HideDispatchClock(grid);
+            foreach (var button in dispatchCancelButtons.ToArray()) RemoveDispatchCancelButton(button);
+            foreach (var box in controllerLabels.Keys.ToArray()) RestoreControllerLabel(box);
         });
     }
 }

@@ -183,6 +183,24 @@ internal static class UserDataMigration
         instance[marker] = true;
     }
 
+    private static void MoveFastDispatchToTask(JsonArray tasks, JsonObject launch)
+    {
+        const string optionName = "自动最速派遣";
+        if (launch["option"] is not JsonArray launchOptions) return;
+        var old = launchOptions.OfType<JsonObject>().FirstOrDefault(option => option["name"]?.ToString() == optionName);
+        if (old == null) return;
+        var dispatch = tasks.OfType<JsonObject>().FirstOrDefault(task => task["entry"]?.ToString() == "DailyDispatchStart");
+        if (dispatch == null) return;
+        if (dispatch["option"] is not JsonArray options)
+        {
+            options = new JsonArray();
+            dispatch["option"] = options;
+        }
+        if (!options.OfType<JsonObject>().Any(option => option["name"]?.ToString() == optionName))
+            options.Add(old.DeepClone());
+        launchOptions.Remove(old);
+    }
+
     private static bool ApplyDesktopUiPolicy(JsonObject config)
     {
         bool changed = config.Remove("GitHubToken");
@@ -314,6 +332,7 @@ internal static class UserDataMigration
                 launch["default_check"] = true;
                 MigrateSchedule(instance, tasks!, launch);
                 MigrateFastDispatch(instance, launch);
+                MoveFastDispatchToTask(tasks!, launch);
             }
             if (!JsonNode.DeepEquals(instance, original)) instanceEdits.Add(file, instance);
         }
