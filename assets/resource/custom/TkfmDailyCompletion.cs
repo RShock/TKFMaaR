@@ -24,19 +24,49 @@ using Newtonsoft.Json.Linq;
 
 public sealed class TkfmDailyCompletion : IMaaCustomAction
 {
+    private const string ServiceKey = "TKFMaa.DailyCompletion.Service";
     public string Name { get; set; } = "TkfmDailyCompletion";
 
     public TkfmDailyCompletion()
     {
         Dispatcher.UIThread.Post(() =>
         {
-            const string key = "TKFMaa.DailyCompletion.Service";
-            (AppDomain.CurrentDomain.GetData(key) as IDisposable)?.Dispose();
-            AppDomain.CurrentDomain.SetData(key, new TkfmDailyCompletionService());
+            (AppDomain.CurrentDomain.GetData(ServiceKey) as IDisposable)?.Dispose();
+            AppDomain.CurrentDomain.SetData(ServiceKey, new TkfmDailyCompletionService());
         });
     }
 
-    public bool Run<T>(T context, in RunArgs args, in RunResults results) where T : IMaaContext => true;
+    public bool Run<T>(T context, in RunArgs args, in RunResults results) where T : IMaaContext
+    {
+        if (args.NodeName != "DailyGuildRewardStart") return true;
+        var processor = MaaProcessor.Processors.ToArray().FirstOrDefault(p => context.Tasker.Equals(p.MaaTasker));
+        if (processor == null || context.IsCancellationRequested) return false;
+        try
+        {
+            if (!context.GetNodeData(args.NodeName, out var raw)) return false;
+            bool weekendsOnly = !JToken.DeepEquals(JObject.Parse(raw)["attach"]?["weekends_only"], new JValue(false));
+            bool skip = weekendsOnly && DateTime.Today.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday);
+            DispatcherHelper.RunOnMainThread(() =>
+            {
+                if (AppDomain.CurrentDomain.GetData(ServiceKey) is not TkfmDailyCompletionService service)
+                    throw new InvalidOperationException("任务状态扩展尚未就绪");
+                service.RecordGuildRewardDecision(processor, skip);
+            });
+            if (context.IsCancellationRequested) return false;
+            if (skip)
+            {
+                processor.AddLog("[领取协会奖励] 当前为工作日，按设置跳过。", changeColor: false);
+                return true; // Keep the queue running. The status service maps this result to Skipped.
+            }
+            var result = context.RunTask("DailyGuildRewardRun", "{}");
+            return !context.IsCancellationRequested && result?.Status == MaaJobStatus.Succeeded;
+        }
+        catch (Exception ex)
+        {
+            processor.AddLog("[领取协会奖励] 无法执行任务：" + ex.Message, "OrangeRed");
+            return false;
+        }
+    }
 }
 
 internal sealed class TkfmDailyCompletionService : IDisposable
@@ -44,6 +74,7 @@ internal sealed class TkfmDailyCompletionService : IDisposable
     private static bool TaskListBusy() =>
         (AppDomain.CurrentDomain.GetData("TKFMaa.TaskListGuard.IsBusy") as Func<bool>)?.Invoke() == true;
 
+    private const string GuildRewardTask = "领取协会奖励";
     private const string Setting = "TkfmTaskRunHistoryV2";
     private const string LegacySetting = "TkfmDailyCompletionV1";
     private readonly DispatcherTimer timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
@@ -51,6 +82,7 @@ internal sealed class TkfmDailyCompletionService : IDisposable
     private readonly Dictionary<DragItemViewModel, MaaProcessor> tasks = new Dictionary<DragItemViewModel, MaaProcessor>();
     private readonly Dictionary<INotifyCollectionChanged, MaaProcessor> collections =
         new Dictionary<INotifyCollectionChanged, MaaProcessor>();
+    private readonly Dictionary<DragItemViewModel, long> guildRewardSkips = new();
     private readonly Dictionary<Grid, (ColumnDefinition Column, TextBlock Text, StatusBadge? Badge)> labels = new();
     private readonly record struct StatusBadge(string Text, string? NonTodayDate = null, string Prefix = "", IBrush? Color = null);
     private bool reportedError;
@@ -135,9 +167,40 @@ internal sealed class TkfmDailyCompletionService : IDisposable
         if (args.PropertyName != nameof(DragItemViewModel.RunState) || sender is not DragItemViewModel task
             || !tasks.TryGetValue(task, out var processor) || TaskKey(task) is not { Length: > 0 } key) return;
         var state = task.RunState;
+        if (key == GuildRewardTask)
+        {
+            // Wait for the schedule decision before replacing the last actual run.
+            if (state == TaskRunState.Running) return;
+            if ((state is TaskRunState.Succeeded or TaskRunState.Failed or TaskRunState.Stopped)
+                && guildRewardSkips.Remove(task, out var runId) && runId == task.RunId)
+            {
+                if (state == TaskRunState.Succeeded) task.RunState = TaskRunState.Skipped;
+                return;
+            }
+        }
         // Queued and Skipped describe the queue, not an actual attempt at this task.
         if (state is not (TaskRunState.Running or TaskRunState.Succeeded or TaskRunState.Failed or TaskRunState.Stopped))
             return;
+        SaveRun(processor, key, state);
+    }
+
+    internal void RecordGuildRewardDecision(MaaProcessor processor, bool skip)
+    {
+        TrackTasks();
+        var task = processor.ViewModel?.TaskItemViewModels.FirstOrDefault(item =>
+            item.RunState == TaskRunState.Running && TaskKey(item) == GuildRewardTask);
+        if (task == null) return;
+        if (skip)
+            guildRewardSkips[task] = task.RunId;
+        else
+        {
+            guildRewardSkips.Remove(task);
+            SaveRun(processor, GuildRewardTask, TaskRunState.Running);
+        }
+    }
+
+    private void SaveRun(MaaProcessor processor, string key, TaskRunState state)
+    {
         try
         {
             var record = RecordFor(processor);
@@ -192,6 +255,7 @@ internal sealed class TkfmDailyCompletionService : IDisposable
         {
             task.PropertyChanged -= OnTaskChanged;
             tasks.Remove(task);
+            guildRewardSkips.Remove(task);
         }
         foreach (var processor in records.Keys.Where(processor => !processors.Contains(processor)).ToArray())
             records.Remove(processor);
@@ -345,6 +409,7 @@ internal sealed class TkfmDailyCompletionService : IDisposable
         collections.Clear();
         foreach (var task in tasks.Keys) task.PropertyChanged -= OnTaskChanged;
         tasks.Clear();
+        guildRewardSkips.Clear();
         foreach (var title in labels.Keys.ToArray()) Hide(title);
         records.Clear();
     }

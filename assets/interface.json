@@ -141,9 +141,33 @@
             "doc": [
                 "先尝试强化未满级角色两次，每次使用 1 瓶最低级药水。随后领取每日、每周、每月、个人、活动和协会奖励。"
             ]
+        },
+        {
+            "name": "领取协会奖励",
+            "entry": "DailyGuildRewardStart",
+            "option": ["仅在周六周日开启"],
+            "doc": ["进入协会，点击「魔核共建」650 档图标。识别并确认领取物品弹窗后才算完成。"]
         }
     ],
     "option": {
+        "仅在周六周日开启": {
+            "type": "switch",
+            "default_case": "Yes",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "pipeline_override": {
+                        "DailyGuildRewardStart": {"attach": {"weekends_only": true}}
+                    }
+                },
+                {
+                    "name": "No",
+                    "pipeline_override": {
+                        "DailyGuildRewardStart": {"attach": {"weekends_only": false}}
+                    }
+                }
+            ]
+        },
         "定时任务允许自动启动模拟器": {
             "type": "switch",
             "default_case": "No",

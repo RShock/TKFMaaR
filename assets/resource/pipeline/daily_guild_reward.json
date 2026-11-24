@@ -1,0 +1,128 @@
+{
+    "DailyGuildRewardStart": {
+        "attach": {"weekends_only": true},
+        "action": {
+            "type": "Custom",
+            "param": {"custom_action": "TkfmDailyCompletion", "custom_action_param": {}}
+        }
+    },
+    "DailyGuildRewardRun": {
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "TkfmRunWithRecovery",
+                "custom_action_param": {
+                    "entry": "DailyGuildRewardRoute",
+                    "label": "领取协会奖励",
+                    "home_retry_prefix": "DailyGuildReward",
+                    "non_retryable_hit": "DailyGuildRewardClaim",
+                    "success_any_hit": ["DailyGuildRewardConfirmed"]
+                }
+            }
+        }
+    },
+    "DailyGuildRewardRoute": {
+        "next": [
+            "DailyGuildRewardClaim",
+            "DailyGuildRewardOpen",
+            "[JumpBack]CommonWaitLoading",
+            "[JumpBack]CommonEnsureMain"
+        ],
+        "timeout": 10000
+    },
+    "__DailyGuildRewardGuildUnselected": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "DailyGuildReward/GuildUnselected720.png",
+                "roi": [303, 1167, 114, 76],
+                "threshold": 0.89
+            }
+        }
+    },
+    "__DailyGuildRewardGuildSelected": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "DailyGuildReward/GuildSelected720.png",
+                "roi": [303, 1167, 114, 76],
+                "threshold": 0.89
+            }
+        }
+    },
+    "DailyGuildRewardOpen": {
+        "recognition": {
+            "type": "And",
+            "param": {"all_of": ["__DailyGuildRewardGuildUnselected", "CommonMainReady"], "box_index": 0}
+        },
+        "action": {"type": "Custom", "param": {"custom_action": "ClickRecognitionCenter", "custom_action_param": {}}},
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1500},
+        "max_hit": 3,
+        "next": ["DailyGuildRewardRoute"]
+    },
+    "__DailyGuildRewardIcon650": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "DailyGuildReward/RewardIcon650720.png",
+                "roi": [551, 1030, 83, 78],
+                "threshold": 0.88
+            }
+        }
+    },
+    "DailyGuildRewardClaim": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": ["__DailyGuildRewardIcon650", "__DailyGuildRewardGuildSelected"],
+                    "absent": [
+                        "__DailyTaskRewardsRewardPopup",
+                        "__DailyTaskRewardsInventoryFullTarget",
+                        "TkfmRecoverySessionExpiredTarget",
+                        "TkfmRecoveryReturnTitleTarget",
+                        "GameCloseAnnouncement"
+                    ]
+                }
+            }
+        },
+        "action": {"type": "Custom", "param": {"custom_action": "ClickRecognitionCenter", "custom_action_param": {}}},
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1500},
+        "max_hit": 1,
+        "next": ["DailyGuildRewardConfirm", "[JumpBack]CommonWaitLoading"],
+        "on_error": ["DailyGuildRewardResponseUnconfirmed"],
+        "timeout": 8000,
+        "focus": {"Node.Action.Starting": "领取协会奖励：点击魔核共建 650 档奖励，等待领取物品弹窗。"}
+    },
+    "DailyGuildRewardConfirm": {
+        "recognition": {
+            "type": "And",
+            "param": {"all_of": ["__DailyTaskRewardsRewardResponseTarget"]}
+        },
+        "action": {"type": "Custom", "param": {"custom_action": "ClickRecognitionCenter", "custom_action_param": {}}},
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1500},
+        "max_hit": 1,
+        "next": ["DailyGuildRewardConfirmed", "[JumpBack]CommonWaitLoading"],
+        "on_error": ["DailyGuildRewardResponseUnconfirmed"],
+        "timeout": 8000
+    },
+    "DailyGuildRewardResponseUnconfirmed": {
+        "next": ["TkfmTaskFailure"],
+        "timeout": 1,
+        "focus": {"Node.Action.Starting": "领取协会奖励：未确认领取物品弹窗及其关闭结果，请检查 650 档是否可领。"}
+    },
+    "DailyGuildRewardConfirmed": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": ["__DailyGuildRewardGuildSelected"],
+                    "absent": ["__DailyTaskRewardsRewardPopup", "__DailyTaskRewardsRewardConfirmButton"]
+                }
+            }
+        },
+        "focus": {"Node.Action.Succeeded": "领取协会奖励：已确认领取物品弹窗关闭。"}
+    }
+}

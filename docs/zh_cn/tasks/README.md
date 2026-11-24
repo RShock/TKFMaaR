@@ -13,6 +13,7 @@ flowchart TD
     Login[启动游戏任务：可先启动MuMu再启动游戏] --> Main
     Main --> Friend[好友体力]
     Main --> Rewards[任务奖励]
+    Main --> GuildReward[领取协会奖励]
     Main --> Alchemy[炼金订单]
     Main --> Dispatch[每日派遣]
     Main --> Shop[商城购买]
@@ -36,6 +37,7 @@ flowchart TD
 | 调教     | `DailyTrainingStart`      | 高   | [调教](daily_training.md)           |
 | 全境征才 | `DailyRecruitmentStart`   | 高   | [全境征才](daily_recruitment.md)    |
 | 奖励领取 | `DailyTaskRewardsStart`   | 中   | [奖励领取](daily_task_rewards.md)，含[角色强化两次](daily_character_upgrade.md) |
+| 领取协会奖励 | `DailyGuildRewardStart` | 低 | [领取协会奖励](daily_guild_reward.md) |
 | 自动战斗 | `AutoBattleStart`         | 高   | [自动战斗](auto_battle.md)          |
 
 详细 OCR、ROI、节点名和素材路径只在对应任务文档的实现映射中维护。
