@@ -39,8 +39,6 @@ foreach ($resource in $interface.resource) {
 }
 $interface.agent.child_exec = $pythonPath
 $interface.agent.child_args = @((Join-Path $projectRoot 'agent/main.py'))
-$interface.name = "$($interface.name)（开发版）"
-$interface.version = "$($interface.version)-dev"
 
 # Forced restart is explicit: back up persisted settings before interrupting the
 # frontend. Match full paths and Agent script arguments, never process names alone.
@@ -188,7 +186,7 @@ $frontendProcess = Start-Process -FilePath $frontendPath -WorkingDirectory $runt
         MAAFW_BINARY_PATH = $nativePath; PYTHONUTF8 = '1'
         TKFM_FIRST_RUN_PYTHON = $pythonPath; TKFM_FIRST_RUN_PWSH = (Join-Path $PSHOME 'pwsh.exe')
     }
-Write-Output "已启动开发版，PID：$($frontendProcess.Id)"
+Write-Output "已启动 $($interface.name) $($interface.version)，PID：$($frontendProcess.Id)"
 Write-Output '版本检查使用 RShock/TKFMaaR，保留用户的检查与资源自动更新设置。'
 Write-Output '任务识别与实时预览共用一个截图控制器，不再另建预览连接。'
 Write-Output '配置与关卡截图在启动前自动迁移，不再自动弹出旧助手导入向导。'

@@ -5,9 +5,8 @@
     "description": "天下布魔小助手~",
     "contact": "https://github.com/RShock/TKFMaaR/issues",
     "license": "MIT",
-    "welcome": "# 版本公告\n\n第一个可公开测试版发布。",
     "github": "https://github.com/RShock/TKFMaaR",
-    "version": "2.0",
+    "version": "2.1",
     "controller": [
         {
             "name": "安卓端",

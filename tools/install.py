@@ -18,7 +18,6 @@ from install_first_run import install_first_run
 
 working_dir = Path(__file__).parent.parent.resolve()
 install_path = working_dir / Path("install")
-version = len(sys.argv) > 1 and sys.argv[1] or "v2.0"
 
 # the first parameter is self name
 if sys.argv.__len__() < 4:
@@ -26,6 +25,7 @@ if sys.argv.__len__() < 4:
     print("Example: python install.py v1.0.0 win x86_64")
     sys.exit(1)
 
+version = sys.argv[1]
 os_name = sys.argv[2]
 arch = sys.argv[3]
 
@@ -121,7 +121,10 @@ def install_resource():
     with open(install_path / "interface.json", "r", encoding="utf-8") as f:
         interface = jsonc.load(f)
 
-    interface["version"] = version
+    # Branch builds keep the source version for in-app update comparisons.
+    # The CI suffix still identifies the archive produced by the workflow.
+    if version and "-ci." not in version:
+        interface["version"] = version
     # The source interface lives under assets/, while the packaged interface
     # and agent/ directory are siblings in the release root.
     if os_name == "win":

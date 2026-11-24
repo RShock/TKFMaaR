@@ -38,7 +38,7 @@ Windows 本地开发环境使用 `.venv312/`，VS Code 默认解释器和终端�
 - `python tools/build_stamina_activities.py`：修改 `assets/stamina/active.yaml` 后重新生成体力活动配置。
 - `python tools/build_stamina_activities.py --check`：只检查体力活动配置与 `assets/interface.json` 是否同步，不写文件。
 - `python tools/add_interaction_stability.py --check`：检查带识别结果的交互动作是否配置点击前稳定等待。
-- `pwsh -File tools/run_dev.ps1`：使用已准备的 `install/` 前端及 native runtime 和 `.venv312/` 启动开发版，直接加载源码资源和 Agent；要求 PowerShell 7.4 及以上，不重新打包或修改 EXE。
+- `pwsh -File tools/run_dev.ps1`：使用已准备的 `install/` 前端及 native runtime 和 `.venv312/` 启动开发版，直接加载源码资源和 Agent；要求 PowerShell 7.4 及以上，不重新打包或修改 EXE。源码运行和普通分支构建沿用 `assets/interface.json` 的应用名和版本号，应用内的版本号不附加开发或 CI 后缀。
 - 桌面自动迁移入口为 `tools/first_run/`；开发启动与桌面发布构建需 .NET SDK 8 或更高版本生成独立 StartupHook，保留原 EXE/DLL，只更新启动依赖配置。配置和截图迁移先于配置读取、资源加载与更新检查，不依赖连接设备；正常启动不弹旧助手向导，Windows仅主动创建`.tkfm-import-request`后进入跨目录导入。配置迁移包含`config/`、`appsettings.json`和全部自定义截图；持久图片位于安装目录`userdata/resource/image/UserStages/`并作为第二资源包加载，禁止再写入会被更新器清理的程序resource目录。发布包不得携带用户配置和图片，默认值只补缺项。开发强制重启遇到导入进行中则停止，空闲向导仍按路径和父进程精确结束。
 - `pwsh -File tools/run_dev.ps1 -ForceRestart`：用户明确授权强制重启时，先备份配置，再按完整路径结束本工作区助手与本项目 Agent 后重新打开界面；会中断当前队列，不自动重跑任务。
 
@@ -123,6 +123,7 @@ Windows 本地开发环境使用 `.venv312/`，VS Code 默认解释器和终端�
 
 ## 版本控制安全
 
+- `main` 为持续开发与发布的主线。发布分支从 `main` 切出。发布准备或修复若先落在发布分支，须合回 `main`，再从 `main` 切出下一次发布。
 - 本魔改工作区维护 `RShock/TKFMaaR`：`origin` 指向个人 Fork，`upstream` 保留原仓库用于查阅并禁用推送；默认不合并、同步上游或向上游创建 PR。提交与推送仍按当前对话中的明确授权执行。
 - 未经用户在当前对话中明确要求，不得执行 `git add`、`git commit`、`git push`、创建或删除分支、打标签、创建 PR 或触发发布；默认将修改保留在工作区供用户检查。
 - 不得把“完成修改”“提交代码”等模糊表述自行解释为允许推送、打标签或发布；每类远程操作都需要明确指令。
