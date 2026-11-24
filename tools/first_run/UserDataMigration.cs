@@ -255,8 +255,9 @@ internal static class UserDataMigration
                 else copies[relative] = file;
             }
 
-        // Validate existing references before writing a success marker. Never silently
-        // replace a broken saved profile with a blank profile or default task list.
+        // Keep saved profiles editable even if an older installation lost some images.
+        // The custom stage action checks its templates before starting the game flow.
+        var missingImages = new SortedSet<string>(StringComparer.Ordinal);
         var configs = Files(Path.Combine(root, "config"))
             .Where(path => Path.GetExtension(path).Equals(".json", StringComparison.OrdinalIgnoreCase)).ToList();
         string appsettings = Path.Combine(root, "appsettings.json");
@@ -268,9 +269,10 @@ internal static class UserDataMigration
                 if (!relative.StartsWith("UserStages/", StringComparison.Ordinal)) continue;
                 string resolved = Path.GetFullPath(Path.Combine(imageRoot, relative));
                 if (!resolved.StartsWith(target + Path.DirectorySeparatorChar,
-                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal)
-                    || (!File.Exists(resolved) && !copies.ContainsKey(Path.GetRelativePath(target, resolved))))
-                    throw new IOException("已保存的关卡截图缺失：" + relative + "；配置保持原样，请从旧目录或备份恢复图片。");
+                        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+                    throw new IOException("已保存的关卡截图路径超出用户资源目录：" + relative);
+                if (!File.Exists(resolved) && !copies.ContainsKey(Path.GetRelativePath(target, resolved)))
+                    missingImages.Add(relative);
             }
 
         string configPath = Path.Combine(root, "config", "config.json");
@@ -380,5 +382,20 @@ internal static class UserDataMigration
             WriteObject(marker, new JsonObject { ["schema"] = 1, ["version"] = version, ["backup"] = backup });
         }
         Directory.CreateDirectory(target);
+        if (missingImages.Count > 0) RecordMissingImages(root, missingImages);
+    }
+
+    private static void RecordMissingImages(string root, IEnumerable<string> missingImages)
+    {
+        try
+        {
+            string logs = Path.Combine(root, "logs");
+            Directory.CreateDirectory(logs);
+            string missing = string.Join(", ", missingImages.Select(path => JsonSerializer.Serialize(path, WriteOptions)));
+            File.AppendAllText(Path.Combine(logs, "tkfm-userdata-migration.log"),
+                $"{DateTimeOffset.Now:O} 已保存的关卡截图缺失，仍可打开助手。请在管理自定义关卡中重新截取并保存。缺失文件：{missing}{Environment.NewLine}");
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
     }
 }
