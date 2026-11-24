@@ -100,6 +100,7 @@
             "entry": "DailyStaminaStart",
             "option": [
                 "体力消耗关卡",
+                "防分数溢出",
                 "使用扫荡券",
                 "扫荡不足时手动补刷",
                 "体力不足时使用体力药",
@@ -150,6 +151,43 @@
         }
     ],
     "option": {
+        "防分数溢出": {
+            "type": "switch",
+            "default_case": "Yes",
+            "description": "仅用于有分数的自定义关卡。距离设置上限 3,000 分时停止刷图。",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "option": ["分数接近上限时停刷"],
+                    "pipeline_override": {
+                        "CustomStageScoreConfig": {"attach": {"enabled": true}}
+                    }
+                },
+                {
+                    "name": "No",
+                    "pipeline_override": {
+                        "CustomStageScoreConfig": {"attach": {"enabled": false}}
+                    }
+                }
+            ]
+        },
+        "分数接近上限时停刷": {
+            "type": "input",
+            "description": "输入框末尾固定显示 000。默认上限 150,000 分，从 147,000 分开始停刷。",
+            "inputs": [
+                {
+                    "name": "分数上限（千分）",
+                    "label": "活动分数上限",
+                    "pipeline_type": "int",
+                    "default": "150",
+                    "verify": "^[1-9][0-9]{0,2}$",
+                    "pattern_msg": "请输入 1–999 的整数"
+                }
+            ],
+            "pipeline_override": {
+                "CustomStageScoreConfig": {"attach": {"limit_thousands": "{分数上限（千分）}"}}
+            }
+        },
         "仅在周六周日开启": {
             "type": "switch",
             "default_case": "Yes",

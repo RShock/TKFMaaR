@@ -1,6 +1,6 @@
 # 消耗体力：自定义活动关卡
 
-自定义路线与内置路线共用[每日政务前置扫荡](daily_affairs.md)，完成后才进入截图关卡。运行时只覆盖 `DailyStaminaBattleStartAttempt` 的关卡导航，不覆盖 `DailyStaminaStartAttempt`，避免绕过政务或在恢复时重置门票额度。
+自定义路线先进入活动读取分数。允许刷取时，继续[每日政务前置扫荡](daily_affairs.md)，再回到目标关卡。故障恢复沿用本轮政务和体力消费额度。
 
 主页出征使用Common/MainExpeditionButton720.png，默认匹配方法、阈值恢复0.82；活动和关卡的用户截图继续按录制配置匹配。该导航参数不代表实测通过，也不改变体力与购买额度。
 
@@ -51,7 +51,10 @@ flowchart TD
     Router -->|限时活动已选中且命中录制入口| Entry[点击限时活动入口]
     Router -->|已在保存的关卡列表| Back[返回并重新确认限时活动]
     Back --> Router
-    Entry --> ListRouter[确认关卡列表]
+    Entry --> Before[确认关卡列表，记录刷取前分数]
+    Before -->|达到停刷线| Stop[结束当前消耗体力任务]
+    Before -->|可以刷取| Affairs[处理已选每日政务]
+    Affairs --> ListRouter[确认关卡列表]
     ListRouter -->|命中关卡图且页面标记一致| Stage[点击，再识别关卡详情]
     ListRouter -->|仅列表页面标记| List{向下已滚动6次?}
     List -->|否| Swipe[向上滑动查看下方关卡]
@@ -62,8 +65,11 @@ flowchart TD
     Stage -->|未勾选使用扫荡券| Battle
     Stage -->|开始按钮| Battle[复用直接战斗和再次挑战]
     Stage -->|未确认并超时| Failed
-    Sweep --> Main[确认返回主页后完成]
-    Battle --> Main
+    Sweep --> After[返回关卡列表，记录刷取后分数]
+    Battle --> After
+    After -->|保护开启且达到停刷条件| Stop
+    After -->|保护开启且可继续刷取| ListRouter
+    After -->|刷取结束| Main[确认返回主页后完成]
     Failed --> Recovery{遇到故障时行为}
     Recovery -->|重启| Restart[唯一重启登录，再从主页进入]
     Restart --> Home
@@ -81,8 +87,15 @@ flowchart TD
 - 自定义Case才会进入本动作；任务级profile_id为空时回退实例最后选择的配置，避免已保存配置因前端覆盖丢失而直接报未选择。
 - 体力消耗用于OCR读取当前体力后判断是否足够，并非游戏输入项。继续沿用现有扫荡补刷、用药与购买开关；恢复资源默认关闭，额度不增加。
 - “使用扫荡券”默认关闭：即使有军团扫荡按钮，也走普通开始、战斗和再次挑战，不受扫荡补刷开关限制。勾选后才启用扫荡；仅有开始按钮时继续直接战斗。新模式只通过预定义Pipeline节点Override分流，普通战斗复用现有 `mode: direct` 子流程。
+- 点击关卡后，在弹窗正文区域通过 OCR 识别「活动进度需完成…后开启」，因为前置关卡名会变化。命中时保留提示弹窗并明确报未解锁。按故障设置暂停或执行失败继续策略，重启无法解除该前置条件。
 - 右侧实时画面未连接、缓存帧为空、横屏或图像无效时停止刷新并提示，用户恢复后主动刷新；截图窗口不另连接或切换设备。运行中允许编辑；设备正在连接或实例已关闭时暂不可编辑。
 - 配置不完整、重名、非法体力消耗、图片缺失、路径越界和版本不兼容在动作前失败。导航和战斗异常沿用唯一重启恢复。
+
+## 活动分数
+
+- 识别到自定义活动的关卡列表后，从画面高度 10%–20% 区域 OCR 读取分数。刷取前和结束回到关卡列表时分别记录到日志。千位分隔符用于区分关卡名称、倒计时和体力消耗，三位以内还需在分数栏位置命中。
+- 「防分数溢出」默认开启。上限输入框末尾固定显示 `000`，默认 `150` 加上 `000` 表示 150,000 分。分数达到「上限 − 3,000」时，在当前关卡列表正常结束任务。默认从 147,000 分起停。如果进入活动时已达到停刷线，跳过本轮每日政务和刷图。
+- 有分数的活动在保护开启时，普通战斗从结算页返回关卡列表重新读取分数。扫荡使用弹窗初始数量，识别到多次扫荡时停止提交。继续前需要读到低于停刷线的分数且体力足够。已经读到过分数而复查读不到时，停止继续刷图。关闭保护后仍记录刷取前后的分数。
 
 ## 实现映射
 
@@ -95,7 +108,8 @@ flowchart TD
 | 限时活动页签 | CustomStageLimitedActivitySelected、Common/LimitedActivityTab720.png |
 | 无状态图片导航 | custom_stage.json：CustomStageActivityRouter、CustomStageMainExpedition、CustomStageOpenLimitedActivities、CustomStageOpenEntry、CustomStageLimitedListRouter、CustomStageOpenTarget、CustomStageScrollDown |
 | 详情确认与战斗 | CustomStageConfirmDetail、CustomStageDirectBattle、既有DailyStamina节点 |
-| 唯一异常恢复 | CustomStageWithRecovery → DailyStaminaStartAttempt |
+| 活动分数 | CustomStageScoreBefore、CustomStageScoreAfter、CustomStageScoreAfterRound、TkfmCustomStage |
+| 唯一异常恢复 | CustomStageWithRecovery → CustomStageActivityRouter |
 | 兼容保留的配置和图片 | 实例TkfmCustomStageProfilesV1、安装目录userdata/resource/image/UserStages/；沿用UserStages相对引用 |
 
 ## 限制和完成状态

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -49,8 +51,11 @@ public sealed class TkfmCustomStage : IMaaCustomAction
         try
         {
             if (context.IsCancellationRequested) return false;
-            if ((string)JObject.Parse(string.IsNullOrWhiteSpace(args.ActionParam) ? "{}" : args.ActionParam)["mode"] == "direct")
-                return RunDirectBattle(context, processor);
+            var parameters = JObject.Parse(string.IsNullOrWhiteSpace(args.ActionParam) ? "{}" : args.ActionParam);
+            if ((string)parameters["mode"] == "direct") return RunDirectBattle(context, processor);
+            if ((string)parameters["mode"] == "score") return CheckActivityScore(context, processor, (string)parameters["phase"]);
+            if ((string)parameters["mode"] == "score_direct")
+                return context.OverridePipeline(DirectBattleOverrides(scoreProtected: true).ToString(Formatting.None));
             var config = ReadConfig(processor);
             if (!context.GetNodeData("CustomStageConfig", out var raw))
                 throw new InvalidOperationException("缺少自定义关卡配置节点");
@@ -88,10 +93,11 @@ public sealed class TkfmCustomStage : IMaaCustomAction
             if (cost < 1 || cost > 999) throw new InvalidOperationException("请填写关卡每次消耗的体力（1-999）");
             var overrides = new JObject
             {
-                // Let the custom router observe the real starting page directly.
-                // Every home re-entry uses its guarded action and renews tab navigation only.
-                // Daily affairs remains the common prelude, including for saved custom profiles.
-                ["DailyStaminaBattleStartAttempt"] = new JObject { ["next"] = new JArray("CustomStageActivityRouter") },
+                // After the score check and daily affairs, resume the verified list or reopen the activity.
+                ["DailyStaminaBattleStartAttempt"] = new JObject
+                {
+                    ["next"] = new JArray("CustomStageScoreResumeList", "CustomStageActivityRouter")
+                },
                 ["DailyStaminaPresetRouteStart"] = new JObject { ["next"] = new JArray("CustomStageActivityRouter") },
                 ["CustomStageOpenLimitedActivities"] = new JObject { ["enabled"] = true },
                 ["CustomStageEntryImage"] = ImageRecognition(entry, new JArray(0, 160, 720, 1000)),
@@ -101,8 +107,12 @@ public sealed class TkfmCustomStage : IMaaCustomAction
                 {
                     ["recognition"] = new JObject
                     {
-                        ["type"] = "And", ["param"] = new JObject { ["all_of"] = new JArray("CustomStageTargetImage") }
-                    }
+                        ["type"] = "And", ["param"] = new JObject
+                        {
+                            ["all_of"] = new JArray("CustomStageListPage", "CommonReturnMainByBackButton"), ["box_index"] = 1
+                        }
+                    },
+                    ["action"] = new JObject { ["param"] = new JObject { ["target"] = true } }
                 },
                 // Finish this nested task naturally; StopTask would also stop the wrapper.
                 ["CommonStopOnMain"] = new JObject
@@ -110,6 +120,8 @@ public sealed class TkfmCustomStage : IMaaCustomAction
                     ["action"] = new JObject { ["type"] = "DoNothing" }, ["next"] = new JArray()
                 }
             };
+            PrependRoute(context, overrides, "DailyStaminaDone", "CustomStageScoreAfter");
+            PrependRoute(context, overrides, "DailyStaminaBattleExitToMain", "CustomStageScoreAfter");
             foreach (string name in new[] { "DailyStaminaPresetStaminaEnough", "DailyStaminaPresetStaminaLow" })
             {
                 if (!context.GetNodeData(name, out var data)) throw new InvalidOperationException("缺少体力判断节点");
@@ -131,42 +143,131 @@ public sealed class TkfmCustomStage : IMaaCustomAction
         }
     }
 
+    private static void PrependRoute(IMaaContext context, JObject overrides, string node, string route)
+    {
+        if (!context.GetNodeData(node, out var raw) || JObject.Parse(raw)["next"] is not JArray next)
+            throw new InvalidOperationException("缺少关卡路由：" + node);
+        if (!next.Values<string>().Contains(route)) next.AddFirst(route);
+        overrides[node] = new JObject { ["next"] = next };
+    }
+
+    private static bool CheckActivityScore(IMaaContext context, MaaProcessor processor, string phase)
+    {
+        if (!context.GetNodeData("CustomStageScoreConfig", out var raw)) return false;
+        var settings = JObject.Parse(raw)["attach"];
+        bool protect = (bool?)settings?["enabled"] ?? true;
+        bool knownScore = (bool?)settings?["known_score"] ?? false;
+        int limit = (int?)settings?["limit_thousands"] ?? 150;
+        if (limit < 1 || limit > 999) limit = 150;
+        int cutoff = limit * 1000 - 3000;
+        int? score = ReadActivityScore(context);
+        if (context.IsCancellationRequested) return false;
+        string label = phase == "before" ? "刷取前" : "刷取后";
+        processor.AddLog("[自定义关卡] " + label + "分数："
+            + (score?.ToString("N0", CultureInfo.InvariantCulture) ?? "未识别到分数"), changeColor: false);
+
+        bool nearLimit = protect && score is int current && current >= cutoff;
+        bool readingLost = protect && knownScore && score == null;
+        if (nearLimit)
+            processor.AddLog("分数快满了，不再执行消耗体力任务，可在设置关闭。", "OrangeRed");
+        else if (readingLost)
+            processor.AddLog("[自定义关卡] 本轮已读到过分数，复查未识别到分数，已停止刷图。", "OrangeRed");
+
+        var overrides = new JObject
+        {
+            ["CustomStageScoreStop"] = new JObject { ["enabled"] = nearLimit || readingLost }
+        };
+        if (phase == "before" && protect && score != null && !nearLimit)
+        {
+            overrides["CustomStageScoreConfig"] = new JObject
+            {
+                ["attach"] = new JObject
+                {
+                    ["enabled"] = protect, ["limit_thousands"] = limit, ["known_score"] = true
+                }
+            };
+            overrides["CustomStageScoreBattleReturn"] = new JObject { ["enabled"] = true };
+            overrides["DailyStaminaBattleContinueWhenEnough"] = new JObject { ["enabled"] = false };
+            // Protected rounds reenter the same pipeline. Do not create a nested task for each battle.
+            foreach (string node in new[] { "DailyStaminaNormalBattle", "CustomStageDirectBattle" })
+                overrides[node] = new JObject
+                {
+                    ["action"] = new JObject
+                    {
+                        ["type"] = "Custom",
+                        ["param"] = new JObject
+                        {
+                            ["custom_action"] = "TkfmCustomStage",
+                            ["custom_action_param"] = new JObject { ["mode"] = "score_direct" }
+                        }
+                    },
+                    ["next"] = new JArray("CustomStageDirectInitial")
+                };
+            overrides["CustomStageScoreSweepReturn"] = new JObject { ["enabled"] = true };
+            PrependRoute(context, overrides, "DailyStaminaWaitBattleResult", "CustomStageScoreBattleReturn");
+            overrides["DailyStaminaStageDetailAfterSweep"] = new JObject { ["next"] = new JArray("CustomStageScoreSweepReturn") };
+            overrides["DailyStaminaSweepDialog"] = new JObject { ["next"] = new JArray("DailyStaminaStartSweep") };
+            overrides["DailyStaminaStartSweep"] = new JObject
+            {
+                ["recognition"] = new JObject
+                {
+                    ["type"] = "Custom",
+                    ["param"] = new JObject
+                    {
+                        ["custom_recognition"] = "TaskCompletionGuard",
+                        ["custom_recognition_param"] = new JObject
+                        {
+                            ["required"] = new JArray("__DailyAffairsSweepStart"),
+                            ["absent"] = new JArray("__CustomStageScoreMultipleSweepCount")
+                        }
+                    }
+                }
+            };
+        }
+        if (phase == "round" && !nearLimit && !readingLost)
+        {
+            // Each confirmed return to the list starts a new navigation visit. Resource budgets persist.
+            foreach (string node in new[] { "CustomStageOpenTarget", "CustomStageScrollDown" })
+                if (context.GetHitCount(node, out var hits) && hits > 0 && !context.ClearHitCount(node)) return false;
+        }
+        return context.OverridePipeline(overrides.ToString(Formatting.None));
+    }
+
+    private static int? ReadActivityScore(IMaaContext context)
+    {
+        using var image = new MaaImageBuffer();
+        if (context.Tasker.Controller?.GetCachedImage(image) != true) return null;
+        using var result = context.RunRecognition("__CustomStageScoreText", image);
+        if (result?.Hit != true || JObject.Parse(result.Detail)["filtered"] is not JArray matches) return null;
+        var grouped = new List<int>();
+        var plain = new List<int>();
+        foreach (var match in matches.OfType<JObject>())
+        {
+            string text = Regex.Replace(((string)match["text"] ?? "").Replace('，', ','), @"\s+", "");
+            if (Regex.IsMatch(text, @"^[0-9]{1,3},[0-9]{3}$"))
+            {
+                grouped.Add(int.Parse(text.Replace(",", ""), CultureInfo.InvariantCulture));
+                continue;
+            }
+            // Short scores need the position of the score counter: stage costs and
+            // timers can also contain standalone numbers elsewhere in the OCR band.
+            if (match["box"] is JArray box && box.Count == 4 && Regex.IsMatch(text, @"^[0-9]{1,3}$"))
+            {
+                int right = (int)box[0] + (int)box[2];
+                int centerY = (int)box[1] + (int)box[3] / 2;
+                if (right >= 425 && right <= 470 && centerY >= 179 && centerY <= 221)
+                    plain.Add(int.Parse(text, CultureInfo.InvariantCulture));
+            }
+        }
+        var values = grouped.Count > 0 ? grouped : plain;
+        return values.Count == 1 ? values[0] : null;
+    }
+
     private static bool RunDirectBattle(IMaaContext context, MaaProcessor processor)
     {
         try
         {
-            var overrides = new JObject
-            {
-                ["DailyStaminaTrainingResumeStart"] = new JObject { ["enabled"] = true },
-                ["DailyStaminaTrainingFinishWhenLow"] = new JObject { ["enabled"] = true },
-                ["DailyStaminaStageDetailInitialDecision"] = new JObject { ["next"] = new JArray("CustomStageDirectInitial") },
-                ["DailyStaminaUsePotionPopup"] = new JObject
-                {
-                    ["next"] = new JArray("[JumpBack]CommonWaitLoading", "DailyStaminaCloseStaminaPurchasePopupAfterRefill", "CustomStageDirectInitial")
-                },
-                ["DailyStaminaCloseStaminaPurchasePopupAfterRefill"] = new JObject
-                {
-                    ["next"] = new JArray("[JumpBack]CommonWaitLoading", "CustomStageDirectInitial")
-                },
-                ["DailyStaminaCurrencyPurchasedState"] = new JObject
-                {
-                    ["next"] = new JArray("[JumpBack]CommonWaitLoading", "DailyStaminaCloseStaminaPurchasePopupAfterRefill", "CustomStageDirectInitial")
-                }
-            };
-            foreach (string name in new[] { "DailyStaminaRefillWithPotionWhenLow", "DailyStaminaRefillWithCurrencyWhenLow" })
-                overrides[name] = new JObject
-                {
-                    // Keep enabled and consumption limits from the task's explicit options.
-                    ["recognition"] = new JObject
-                    {
-                        ["type"] = "And", ["param"] = new JObject
-                        {
-                            ["all_of"] = new JArray("DailyStaminaPresetStaminaLow", "__DailyStaminaTrainingStartButton"), ["box_index"] = 1
-                        }
-                    },
-                    ["action"] = new JObject { ["param"] = new JObject { ["target"] = true } },
-                    ["post_wait_freezes"] = new JObject { ["time"] = 300, ["target"] = new JArray(270, 1090, 180, 85), ["timeout"] = 1000 }
-                };
+            var overrides = DirectBattleOverrides(scoreProtected: false);
             processor.AddLog("[自定义关卡] 已识别开始页，直接战斗；战斗后复用再次挑战和体力不足返回。", changeColor: false);
             var result = context.RunTask("CustomStageDirectInitial", overrides.ToString(Formatting.None));
             return !context.IsCancellationRequested && result?.Status == MaaJobStatus.Succeeded;
@@ -176,6 +277,47 @@ public sealed class TkfmCustomStage : IMaaCustomAction
             processor.AddLog("[自定义关卡] 直接战斗失败：" + ex.Message, "OrangeRed");
             return false;
         }
+    }
+
+    private static JObject DirectBattleOverrides(bool scoreProtected)
+    {
+        var overrides = new JObject
+        {
+            ["DailyStaminaTrainingResumeStart"] = new JObject { ["enabled"] = !scoreProtected },
+            ["DailyStaminaTrainingFinishWhenLow"] = new JObject { ["enabled"] = true },
+            ["DailyStaminaUsePotionPopup"] = new JObject
+            {
+                ["next"] = new JArray("[JumpBack]CommonWaitLoading", "DailyStaminaCloseStaminaPurchasePopupAfterRefill", "CustomStageDirectInitial")
+            },
+            ["DailyStaminaCloseStaminaPurchasePopupAfterRefill"] = new JObject
+            {
+                ["next"] = new JArray("[JumpBack]CommonWaitLoading", "CustomStageDirectInitial")
+            },
+            ["DailyStaminaCurrencyPurchasedState"] = new JObject
+            {
+                ["next"] = new JArray("[JumpBack]CommonWaitLoading", "DailyStaminaCloseStaminaPurchasePopupAfterRefill", "CustomStageDirectInitial")
+            }
+        };
+        foreach (string name in new[] { "DailyStaminaRefillWithPotionWhenLow", "DailyStaminaRefillWithCurrencyWhenLow" })
+            overrides[name] = new JObject
+            {
+                // Keep enabled and consumption limits from the task's explicit options.
+                ["recognition"] = new JObject
+                {
+                    ["type"] = "And", ["param"] = new JObject
+                    {
+                        ["all_of"] = new JArray("DailyStaminaPresetStaminaLow", "__DailyStaminaTrainingStartButton"), ["box_index"] = 1
+                    }
+                },
+                ["action"] = new JObject { ["param"] = new JObject { ["target"] = true } },
+                ["post_wait_freezes"] = new JObject { ["time"] = 300, ["target"] = new JArray(270, 1090, 180, 85), ["timeout"] = 1000 }
+            };
+        if (!scoreProtected)
+            overrides["DailyStaminaStageDetailInitialDecision"] = new JObject
+            {
+                ["next"] = new JArray("CustomStageDirectInitial")
+            };
+        return overrides;
     }
 
     private static JObject ImageRecognition(string path, JArray roi) => new JObject
@@ -404,6 +546,8 @@ internal sealed class CustomStageUI : IDisposable
             {
                 var vm = view.DataContext as TaskQueueViewModel;
                 if (vm == null) continue;
+                if (active.TryGetValue(vm, out var selectedTask) && selectedTask.InterfaceItem?.Entry == "DailyStaminaStart")
+                    ShowScoreLimitSuffix(view);
                 foreach (var combo in view.GetVisualDescendants().OfType<ComboBox>().ToArray())
                 {
                     var row = combo.Tag as CustomStageSelectRow;
@@ -422,6 +566,32 @@ internal sealed class CustomStageUI : IDisposable
             }
         }
         catch (Exception ex) { LoggerHelper.Error("TKFMaa 消耗体力关卡选择：" + ex.Message); }
+    }
+
+    private static void ShowScoreLimitSuffix(TaskQueueView view)
+    {
+        var options = view.FindControl<StackPanel>("CommonOptionSettings");
+        if (options == null) return;
+        foreach (var input in options.GetVisualDescendants().OfType<TextBox>())
+        {
+            if (input.InnerRightContent != null || input.Parent is not Grid row) continue;
+            if (!row.Children.OfType<StackPanel>().SelectMany(label => label.Children.OfType<TextBlock>())
+                .Any(label => label.Text == "活动分数上限")) continue;
+
+            // Keep the native value and its bindings so existing settings retain their meaning.
+            input.MinWidth = 0;
+            input.Width = 88;
+            input.HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left;
+            input.TextAlignment = TextAlignment.Right;
+            input.InnerRightContent = new TextBlock
+            {
+                Text = "000",
+                FontSize = input.FontSize,
+                Foreground = input.Foreground,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                IsHitTestVisible = false,
+            };
+        }
     }
 
     private void Install(ComboBox original, MaaProcessor processor, DragItemViewModel task,
