@@ -6,6 +6,8 @@
                 "com.pinkcore.tkfm.erolabs"
             ],
             "preserve_hits": [
+                "DailyGuildRewardClaim",
+                "DailyGuildRewardConfirm",
                 "TkfmRecoveryReturnTitle",
                 "DailyStaminaUsePotionPopup",
                 "DailyStaminaBuyStaminaPopup",
@@ -26,7 +28,9 @@
                 "TkfmRecoverySignIn",
                 "GameCloseSignIn",
                 "TkfmRecoveryBackButton",
+                "TkfmRecoveryReturnMap",
                 "TkfmRecoverySystemBack",
+                "TkfmRecoveryReturnHomeRequested",
                 "GameLoginBackFallback",
                 "GameLoginExistingGiftFallback",
                 "TkfmRecoveryLoginBegin",
@@ -177,7 +181,25 @@
             }
         }
     },
+    "__TkfmRecoveryNetworkUnstableReason": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "GameLogin/NetworkUnstableReason720.png",
+                "roi": [105, 582, 370, 55],
+                "threshold": 0.9
+            }
+        }
+    },
     "TkfmRecoverySessionExpiredReason": {
+        "recognition": {
+            "type": "Or",
+            "param": {
+                "any_of": ["__TkfmRecoveryNetworkUnstableReason", "__TkfmRecoverySessionExpiredReasonText"]
+            }
+        }
+    },
+    "__TkfmRecoverySessionExpiredReasonText": {
         "recognition": {
             "type": "OCR",
             "param": {
@@ -536,6 +558,46 @@
             "Node.Action.Starting": "异常恢复：识别到左上角返回按钮，点击按钮中心，再回到原步骤按当前画面继续；不把返回视为任务完成（共享最多两次）。"
         }
     },
+    "__TkfmRecoveryReturnMapButton": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "Common/BattleReturnMap720.png",
+                "roi": [380, 1170, 180, 65],
+                "threshold": 0.87
+            }
+        }
+    },
+    "TkfmRecoveryReturnMap": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": [
+                    "__TkfmRecoveryReturnMapButton",
+                    "__DailyStaminaAgainChallengeButton",
+                    "__DailyStaminaBattleResultClear"
+                ],
+                "box_index": 0
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {
+                "custom_action": "ClickRecognitionCenter",
+                "custom_action_param": {}
+            }
+        },
+        "pre_wait_freezes": {
+            "time": 300,
+            "target": true,
+            "timeout": 1500
+        },
+        "post_delay": 800,
+        "max_hit": 2,
+        "focus": {
+            "Node.Action.Starting": "异常恢复：已确认战斗结算页，点击「返回地图」。"
+        }
+    },
     "TkfmRecoveryVisibleGame": {
         "recognition": {
             "type": "Or",
@@ -632,6 +694,29 @@
         "max_hit": 3,
         "focus": {
             "Node.Action.Starting": "异常恢复：未识别到主页、开始页或已知登录异常，发送一次安卓返回键，再识别当前步骤；每任务最多三次。"
+        }
+    },
+    "TkfmRecoveryReturnHomeRequested": {
+        "next": ["TkfmTaskFailure"],
+        "timeout": 1,
+        "max_hit": 1
+    },
+    "TkfmRecoveryReturnHome": {
+        "next": [
+            "TkfmRecoveryReturnHomeConfirmed",
+            "TkfmRecoveryWebPageUnavailable",
+            "[JumpBack]TkfmRecoveryReturnTitle",
+            "[JumpBack]TkfmRecoveryReturnMap",
+            "[JumpBack]CommonWaitLoading",
+            "[JumpBack]TkfmRecoverySystemBack"
+        ],
+        "rate_limit": 500,
+        "timeout": 5000
+    },
+    "TkfmRecoveryReturnHomeConfirmed": {
+        "recognition": {
+            "type": "And",
+            "param": {"all_of": ["CommonMainReady"]}
         }
     },
     "TkfmRecoveryUnhandled": {
@@ -804,6 +889,8 @@
             "TkfmRecoveryLoginEventSignIn",
             "TkfmRecoveryLoginMonthlyCard",
             "TkfmRecoveryLoginTapTitle",
+            "TkfmRecoveryReturnMap",
+            "TkfmRecoveryBackButton",
             "TkfmRecoveryLoginSucceeded",
             "GameLoginWaitTapScreen"
         ],

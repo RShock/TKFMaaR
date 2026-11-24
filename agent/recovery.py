@@ -77,14 +77,16 @@ class TkfmRecoveryLoginBookkeeping(CustomAction):
             mode = param_mode(argv.custom_action_param)
             key = context.tasker.controller.uuid
             if mode == "begin":
-                used = context.get_hit_count("TkfmRecoveryLoginBegin")
-                if used >= LOGIN_RECOVERY_LIMIT:
+                # Recognition runs before the native hit increment. The action
+                # sees the current attempt already counted, including the last one.
+                attempt = context.get_hit_count("TkfmRecoveryLoginBegin")
+                if not 1 <= attempt <= LOGIN_RECOVERY_LIMIT:
                     return False
                 _LOGIN_DEADLINES[key] = time.monotonic() + LOGIN_RECOVERY_SECONDS
                 _RESTORED_RECRUITMENT_PENDING[key] = {
                     "pending": context.get_anchor("TkfmRecruitmentPending"), "complete": False
                 }
-                print(f"[异常恢复] 接管登录，第{used + 1}/{LOGIN_RECOVERY_LIMIT}次，"
+                print(f"[异常恢复] 接管登录，第{attempt}/{LOGIN_RECOVERY_LIMIT}次，"
                       f"本次最多{LOGIN_RECOVERY_SECONDS}秒；保留当前任务及资源账目。", flush=True)
                 return True
             if mode == "finish":

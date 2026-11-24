@@ -9,6 +9,7 @@
                 "custom_action": "TkfmRunWithRecovery",
                 "custom_action_param": {
                     "entry": "DailyDispatchStartAttempt",
+                    "home_retry_prefix": "DailyDispatch",
                     "label": "每日派遣"
                 }
             }
@@ -69,7 +70,10 @@
             }
         },
         "next": [
-            "DailyDispatchEnterFromDrawer"
+            "[JumpBack]CommonWaitLoading",
+            "DailyDispatchEnterFromDrawer",
+            "DailyDispatchScanOverview",
+            "DailyDispatchOpenDrawerFromMain"
         ],
         "pre_wait_freezes": {
             "time": 300,

@@ -68,6 +68,7 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
                 ConfigurationKeys.ContinueRunningWhenError, false);
             string entry = (string)param["entry"];
             string label = (string)param["label"] ?? args.NodeName;
+            string? homeRetryPrefix = (string?)param["home_retry_prefix"];
             string[] successAnyHit = (param["success_any_hit"] as JArray)?.Values<string>()
                 .Where(name => !string.IsNullOrWhiteSpace(name)).ToArray() ?? Array.Empty<string>();
             if (string.IsNullOrWhiteSpace(entry) || entry == args.NodeName
@@ -86,11 +87,11 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
                 "TkfmRecoverySessionExpired", "TkfmRecoveryAdvertisement",
                 "TkfmRecoveryAnnouncement",
                 "TkfmRecoveryEventSignIn", "TkfmRecoverySignIn", "GameCloseSignIn",
-                "TkfmRecoveryBackButton", "TkfmRecoverySystemBack", "GameLoginBackFallback",
+                "TkfmRecoveryBackButton", "TkfmRecoveryReturnMap", "TkfmRecoverySystemBack", "TkfmRecoveryReturnHomeRequested", "GameLoginBackFallback",
                 "GameLoginExistingGiftFallback" })
                 if (context.GetHitCount(popup, out var popupCount) && popupCount > 0 && !context.ClearHitCount(popup))
                     throw new InvalidOperationException("无法初始化弹窗恢复额度：" + popup);
-            if (!context.OverridePipeline(PopupRecoveryOverride(context).ToString(Formatting.None)))
+            if (!context.OverridePipeline(PopupRecoveryOverride(context, homeRetryPrefix).ToString(Formatting.None)))
                 throw new InvalidOperationException("无法安装通用弹窗恢复分支");
             // One-time module preparation is outside both recovery attempts.
             // In particular, daily ticket reservations survive a game restart.
@@ -98,36 +99,64 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             if (!string.IsNullOrWhiteSpace(initialize)
                 && !RunOnce(context, processor, initialize))
                 throw new InvalidOperationException("无法初始化任务账目：" + initialize);
+            string? nonRetryableHit = (string?)param["non_retryable_hit"];
+            ulong previousNonRetryableHits = 0;
+            if (!string.IsNullOrWhiteSpace(nonRetryableHit))
+                context.GetHitCount(nonRetryableHit, out previousNonRetryableHits);
             if (EnsureGameRunning(context, processor)
-                && RunAttempt(context, processor, entry, successAnyHit)) return !Cancelled(context, processor);
+                && RunAttempt(context, processor, entry, successAnyHit))
+                return !Cancelled(context, processor);
             if (Cancelled(context, processor)) return false;
             RecordFailure(context, label + "首次执行失败");
-            bool webPageUnavailable = WebPageFaultCount(context) > 0;
-            if (!restartOnFailure && !webPageUnavailable)
-                return PauseForFailure(processor, label + "执行失败。", continueAfterFailure);
-
-            // The single restart allowance is consumed before stop/start/login, including failures there.
-            processor.AddLog("[异常恢复] " + label
-                + (webPageUnavailable
-                    ? "：纯白区域及OCR“网页无法打开”均已命中，直接结束游戏并重新登录，再继续当前步骤（仅一次）。"
-                    : "首次异常：结束游戏进程，重新启动并登录，再从当前步骤入口重做（仅一次）。"), "OrangeRed");
-            string retryOverride = RetryOverride(context, entry).ToString(Formatting.None);
-            ResetNavigationHits(context);
-            if (Cancelled(context, processor)) return false;
-
-            if (args.NodeName != "GameLoginStart")
+            if (!string.IsNullOrWhiteSpace(nonRetryableHit)
+                && context.GetHitCount(nonRetryableHit, out var nonRetryableHits)
+                && nonRetryableHits > previousNonRetryableHits)
             {
-                string loginOverride = LoginOverride(context, processor).ToString(Formatting.None);
-                if (!RunOnce(context, processor, "TkfmRecoveryRestartGame", loginOverride))
-                {
-                    if (Cancelled(context, processor)) return false;
-                    RecordFailure(context, label + "的重启或登录失败");
-                    return FinishFailure(processor, label + "的重启或登录失败，不再重启。", continueAfterFailure);
-                }
-                MarkGamePrepared(processor);
+                string reason = label + "尚未满足游戏内的前置条件。";
+                return restartOnFailure
+                    ? FinishFailure(processor, reason, continueAfterFailure)
+                    : PauseForFailure(processor, reason, continueAfterFailure);
             }
-            // The login module's own attempt already stops and starts the game. Do not restart it twice.
+            bool returnedHome = false;
+            if (!string.IsNullOrWhiteSpace(homeRetryPrefix) && WebPageFaultCount(context) == 0
+                && context.GetHitCount("TkfmRecoveryReturnHomeRequested", out var returnRequests)
+                && returnRequests > 0)
+            {
+                processor.AddLog("[异常恢复] " + label + "：尝试返回主页，最多使用三次安卓返回键。", changeColor: false);
+                returnedHome = TryReturnHome(context, processor);
+            }
             if (Cancelled(context, processor)) return false;
+
+            if (!returnedHome)
+            {
+                bool webPageUnavailable = WebPageFaultCount(context) > 0;
+                if (!restartOnFailure && !webPageUnavailable)
+                    return PauseForFailure(processor, label + "执行失败。", continueAfterFailure);
+
+                processor.AddLog("[异常恢复] " + label + (webPageUnavailable
+                    ? "：识别到网页无法打开，结束游戏进程并重新登录。"
+                    : "：结束游戏进程并重新登录。"), "OrangeRed");
+                // The login module already stops and starts the game in its own entry.
+                if (args.NodeName != "GameLoginStart")
+                {
+                    ResetNavigationHits(context, "Game");
+                    string loginOverride = LoginOverride(context, processor).ToString(Formatting.None);
+                    if (!RunAttempt(context, processor, "TkfmRecoveryRestartGame",
+                        new[] { "GameMainReady" }, loginOverride))
+                    {
+                        if (Cancelled(context, processor)) return false;
+                        RecordFailure(context, label + "的重启或登录失败");
+                        return FinishFailure(processor, label + "的重启或登录失败。", continueAfterFailure);
+                    }
+                    MarkGamePrepared(processor);
+                }
+            }
+
+            // Both methods use the same navigation reset, entry, and completion checks.
+            if (Cancelled(context, processor)) return false;
+            ResetNavigationHits(context);
+            string retryOverride = RetryOverride(entry).ToString(Formatting.None);
+            processor.AddLog("[异常恢复] " + label + "：从任务入口重新执行（仅一次）。", changeColor: false);
             if (RunAttempt(context, processor, entry, successAnyHit, retryOverride))
             {
                 if (Cancelled(context, processor)) return false;
@@ -136,7 +165,7 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             }
             if (Cancelled(context, processor)) return false;
             RecordFailure(context, label + "重试后仍异常");
-            return FinishFailure(processor, label + "重试后仍异常，一次重启额度已用尽。", continueAfterFailure);
+            return FinishFailure(processor, label + "重试后仍异常，恢复重跑额度已用尽。", continueAfterFailure);
         }
         catch (Exception ex)
         {
@@ -277,7 +306,35 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
         return false;
     }
 
-    private static void ResetNavigationHits(IMaaContext context)
+    private static bool TryReturnHome(IMaaContext context, MaaProcessor processor)
+    {
+        var overrides = new JObject
+        {
+            ["TkfmRecoverySystemBack"] = new JObject
+            {
+                ["recognition"] = new JObject
+                {
+                    ["type"] = "Custom",
+                    ["param"] = new JObject
+                    {
+                        ["custom_recognition"] = "TaskCompletionGuard",
+                        ["custom_recognition_param"] = new JObject
+                        {
+                            ["required"] = new JArray("__TkfmRecoveryAnyScreen"),
+                            ["absent"] = new JArray("CommonMainReady", "CommonWaitLoading",
+                                "TkfmRecoveryLoginTarget", "TkfmRecoveryReturnTitleTarget", "TkfmRecoveryReturnMap", "GameCloseGift",
+                                "GameCloseAnnouncement", "GameCloseEventSignIn", "TkfmRecoveryMonthlyCardTarget")
+                        }
+                    }
+                },
+                ["focus"] = new JObject { ["Node.Action.Starting"] = "异常恢复：发送一次安卓返回键，然后重新确认主页。" }
+            }
+        };
+        return RunAttempt(context, processor, "TkfmRecoveryReturnHome",
+            new[] { "TkfmRecoveryReturnHomeConfirmed" }, overrides.ToString(Formatting.None));
+    }
+
+    private static void ResetNavigationHits(IMaaContext context, string? prefix = null)
     {
         if (!context.GetNodeData("TkfmRecoveryConfig", out var raw))
             throw new InvalidOperationException("缺少公共恢复配置");
@@ -285,13 +342,14 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
         var preserve = new HashSet<string>((config?["preserve_hits"] as JArray ?? new JArray()).Values<string>());
         foreach (var name in context.Tasker.Resource.NodeList)
         {
-            if (preserve.Contains(name)) continue;
+            if (preserve.Contains(name) || (prefix != null && !name.StartsWith(prefix, StringComparison.Ordinal)))
+                continue;
             if (context.GetHitCount(name, out var count) && count > 0 && !context.ClearHitCount(name))
                 throw new InvalidOperationException("无法重置导航次数：" + name);
         }
     }
 
-    private static JObject PopupRecoveryOverride(IMaaContext context)
+    private static JObject PopupRecoveryOverride(IMaaContext context, string? homeRetryPrefix)
     {
         var overrides = new JObject();
         var observed = new[] {
@@ -320,6 +378,9 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             var next = NodeList(node["next"]);
             var original = NodeList(node["on_error"]);
             if (next.Count == 0 && original.Count == 0) continue;
+            // An explicit terminal failure should leave the current game screen visible.
+            if (original.Count == 0 && next.Count == 1 && RouteName(next[0]) == "TkfmTaskFailure"
+                && (long?)node["timeout"] == 1) continue;
             // Ordinary pages and real ads can share the complete back button.
             // GameCloseGift additionally requires the advertisement tabs; generic
             // back navigation is only an unmatched-timeout fallback.
@@ -327,11 +388,16 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
                 "[JumpBack]TkfmRecoveryLoginObserved",
                 "[JumpBack]TkfmRecoveryReturnTitle",
                 "[JumpBack]TkfmRecoverySessionExpired", "[JumpBack]TkfmRecoveryAnnouncement",
-                "[JumpBack]TkfmRecoveryEventSignIn", "[JumpBack]TkfmRecoverySignIn",
-                "[JumpBack]TkfmRecoveryBackButton", "[JumpBack]TkfmRecoveryAdvertisement",
-                "[JumpBack]TkfmRecoverySystemBack");
+                "[JumpBack]TkfmRecoveryEventSignIn", "[JumpBack]TkfmRecoverySignIn");
+            bool retryFromHome = !string.IsNullOrWhiteSpace(homeRetryPrefix)
+                && name.StartsWith(homeRetryPrefix, StringComparison.Ordinal);
+            errors.Add("[JumpBack]TkfmRecoveryReturnMap");
+            if (!retryFromHome) errors.Add("[JumpBack]TkfmRecoveryBackButton");
+            errors.Add("[JumpBack]TkfmRecoveryAdvertisement");
+            if (!retryFromHome) errors.Add("[JumpBack]TkfmRecoverySystemBack");
             foreach (var route in original) errors.Add(route.DeepClone());
-            if (original.Count == 0) errors.Add("TkfmRecoveryUnhandled");
+            if (retryFromHome) errors.Add("TkfmRecoveryReturnHomeRequested");
+            if (retryFromHome || original.Count == 0) errors.Add("TkfmRecoveryUnhandled");
             var patch = new JObject { ["on_error"] = errors };
             if (next.Count > 0)
             {
@@ -384,7 +450,7 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
                 "GameLoginDispatch", "GameLoginExistingDispatch", "GameLoginExistingReturnDispatch",
                 "GameLoginReconnect", "GameSkipStartupAnimation", "CommonWaitLoading", "GameWaitResourceCheck",
                 "GameCloseGift", "GameCloseAnnouncement", "GameCloseEventSignIn", "GameCloseSignIn",
-                "GameLoginWaitTapScreen"
+                "GameLoginWaitTapScreen", "TkfmRecoveryReturnMap", "TkfmRecoveryBackButton"
             })
             {
                 // No ordinary recovery branches inside this child: every action
@@ -444,9 +510,12 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
         return (bool?)node["attach"]?["recovery_response_wait"] == true;
     }
 
-    private static JObject RetryOverride(IMaaContext context, string entry)
+    private static JObject RetryOverride(string entry)
     {
-        var overrides = new JObject();
+        var overrides = new JObject
+        {
+            ["TkfmRecoveryReturnHomeRequested"] = new JObject { ["enabled"] = false }
+        };
         if (entry == "DailyShopStartAttempt")
         {
             // A game restart may rebuild navigation, but cannot issue a new shopping
