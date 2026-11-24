@@ -38,6 +38,7 @@ public sealed class TkfmTaskPause : IMaaCustomAction
 
 internal sealed class TkfmTaskPauseService : IDisposable
 {
+    private const string FailurePauseQueryKey = "TKFMaa.TaskPause.IsFailurePaused";
     private static bool TaskListBusy() =>
         (AppDomain.CurrentDomain.GetData("TKFMaa.TaskListGuard.IsBusy") as Func<bool>)?.Invoke() == true;
 
@@ -50,6 +51,7 @@ internal sealed class TkfmTaskPauseService : IDisposable
 
     internal TkfmTaskPauseService()
     {
+        AppDomain.CurrentDomain.SetData(FailurePauseQueryKey, (Func<MaaProcessor, bool>)IsFailurePaused);
         timer.Tick += Refresh;
         timer.Start();
         Refresh(null, EventArgs.Empty);
@@ -111,6 +113,9 @@ internal sealed class TkfmTaskPauseService : IDisposable
         state.Attach(processor.MaaTasker);
         return state.PauseForFailure(reason);
     }
+
+    private bool IsFailurePaused(MaaProcessor processor) =>
+        states.TryGetValue(processor, out var state) && state.IsFailurePaused;
 
     private PauseState EnsureState(MaaProcessor processor) =>
         states.GetOrAdd(processor, candidate => new PauseState(candidate));
@@ -217,6 +222,7 @@ internal sealed class TkfmTaskPauseService : IDisposable
     {
         if (disposed) return;
         disposed = true;
+        AppDomain.CurrentDomain.SetData(FailurePauseQueryKey, null);
         timer.Stop();
         timer.Tick -= Refresh;
         foreach (var state in states.Values) state.Dispose();
@@ -236,7 +242,10 @@ internal sealed class TkfmTaskPauseService : IDisposable
         internal MaaTasker? Tasker;
         private EventHandler<MaaCallbackEventArgs>? handler;
         private readonly ManualResetEventSlim gate = new ManualResetEventSlim(true);
-        private int paused;
+        private const int Running = 0;
+        private const int ManualPause = 1;
+        private const int FailurePause = 2;
+        private int pauseMode;
 
         internal PauseState(MaaProcessor processor)
         {
@@ -244,7 +253,8 @@ internal sealed class TkfmTaskPauseService : IDisposable
             ViewModel = processor.ViewModel;
         }
 
-        internal bool IsPaused => Volatile.Read(ref paused) != 0;
+        internal bool IsPaused => Volatile.Read(ref pauseMode) != Running;
+        internal bool IsFailurePaused => Volatile.Read(ref pauseMode) == FailurePause;
 
         internal void Attach(MaaTasker? tasker)
         {
@@ -260,18 +270,15 @@ internal sealed class TkfmTaskPauseService : IDisposable
         {
             if (IsPaused || ViewModel?.IsRunning != true) return;
             gate.Reset();
-            Volatile.Write(ref paused, 1);
+            Volatile.Write(ref pauseMode, ManualPause);
             Processor.AddLog("[暂停任务] 已冻结在下一个识别、动作或等待节点开始前；不停止任务，不重启游戏。", changeColor: false);
         }
 
         internal bool PauseForFailure(string reason)
         {
             if (ViewModel?.IsRunning != true || Processor.MaaTasker?.IsStopping == true) return false;
-            if (!IsPaused)
-            {
-                gate.Reset();
-                Volatile.Write(ref paused, 1);
-            }
+            if (!IsPaused) gate.Reset();
+            Volatile.Write(ref pauseMode, FailurePause);
             Processor.AddLog("[故障暂停] " + reason
                 + " 已冻结在下一个节点边界；修复设备或游戏状态后点击“继续任务”。"
                 + "本步骤保持失败状态。", "OrangeRed");
@@ -300,7 +307,7 @@ internal sealed class TkfmTaskPauseService : IDisposable
         internal void Resume(bool log)
         {
             bool wasPaused = IsPaused;
-            Volatile.Write(ref paused, 0);
+            Volatile.Write(ref pauseMode, Running);
             gate.Set();
             if (log && wasPaused)
                 Processor.AddLog("[继续任务] 已从当前节点边界恢复执行。", changeColor: false);

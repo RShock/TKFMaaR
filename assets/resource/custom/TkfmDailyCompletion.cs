@@ -7,7 +7,9 @@ using System.IO;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using MaaFramework.Binding;
@@ -49,8 +51,8 @@ internal sealed class TkfmDailyCompletionService : IDisposable
     private readonly Dictionary<DragItemViewModel, MaaProcessor> tasks = new Dictionary<DragItemViewModel, MaaProcessor>();
     private readonly Dictionary<INotifyCollectionChanged, MaaProcessor> collections =
         new Dictionary<INotifyCollectionChanged, MaaProcessor>();
-    private readonly Dictionary<Grid, (ColumnDefinition Column, TextBlock Text)> labels =
-        new Dictionary<Grid, (ColumnDefinition, TextBlock)>();
+    private readonly Dictionary<Grid, (ColumnDefinition Column, TextBlock Text, StatusBadge? Badge)> labels = new();
+    private readonly record struct StatusBadge(string Text, string? NonTodayDate = null, string Prefix = "", IBrush? Color = null);
     private bool reportedError;
 
     internal TkfmDailyCompletionService()
@@ -209,21 +211,30 @@ internal sealed class TkfmDailyCompletionService : IDisposable
                 {
                     if (view.DataContext is not TaskQueueViewModel vm) continue;
                     var record = RecordFor(vm.Processor);
+                    bool failurePaused = (AppDomain.CurrentDomain.GetData("TKFMaa.TaskPause.IsFailurePaused")
+                        as Func<MaaProcessor, bool>)?.Invoke(vm.Processor) == true;
                     var rows = view.GetVisualDescendants().OfType<Grid>().Where(grid => grid.Name == "ListGrid").ToArray();
                     foreach (var row in rows)
                     {
                         if (row.DataContext is not DragItemViewModel task) continue;
                         var title = row.Children.OfType<Grid>().FirstOrDefault(grid => Grid.GetColumn(grid) == 1);
-                        var text = task.RunState != TaskRunState.Running && TaskKey(task) is { } key
-                            && record[key] is JObject lastRun ? HistoryText(lastRun) : null;
+                        var lastRun = TaskKey(task) is { } key ? record[key] as JObject : null;
+                        bool taskFailurePaused = failurePaused && task.RunState == TaskRunState.Running;
+                        var text = RowStatus(task.RunState, taskFailurePaused, lastRun);
                         var hasBadge = title != null && text != null;
+                        var status = row.Children.OfType<Grid>().FirstOrDefault(grid => Grid.GetColumn(grid) == 5);
+                        var spinner = status?.Children.OfType<Control>()
+                            .FirstOrDefault(icon => icon.Classes.Contains("TaskRunSpinner"));
+                        bool showSpinner = task.IsRunRunning && !taskFailurePaused;
+                        if (spinner != null && spinner.IsVisible != showSpinner)
+                            spinner.SetCurrentValue(Visual.IsVisibleProperty, showSpinner);
                         var elapsed = row.Children.OfType<TextBlock>().FirstOrDefault(block => Grid.GetColumn(block) == 2);
                         var showElapsed = !hasBadge && task.IsRunElapsedVisible;
                         if (elapsed != null && elapsed.IsVisible != showElapsed)
                             elapsed.SetCurrentValue(Visual.IsVisibleProperty, showElapsed);
                         if (title == null || text == null) continue;
                         shown.Add(title);
-                        Show(title, text);
+                        Show(title, text.Value);
                     }
                 }
             }
@@ -232,46 +243,88 @@ internal sealed class TkfmDailyCompletionService : IDisposable
         catch (Exception ex) { Report(ex); }
     }
 
-    private static string? HistoryText(JObject record)
+    private static StatusBadge? RowStatus(TaskRunState state, bool failurePaused, JObject? lastRun)
     {
-        var status = (string?)record["state"] switch
+        switch (state)
         {
-            nameof(TaskRunState.Succeeded) => "已完成",
-            nameof(TaskRunState.Failed) => "失败",
-            nameof(TaskRunState.Stopped) => "已停止",
-            nameof(TaskRunState.Running) => "运行中断（开始时间）",
-            _ => null,
-        };
-        if (status == null || ReadTime(record) is not { } at) return status;
-        var local = at.ToLocalTime();
-        var format = local.Year == DateTime.Now.Year ? "M月d日 HH:mm" : "yyyy年M月d日 HH:mm";
-        return local.ToString(format, CultureInfo.InvariantCulture) + " " + status;
+            case TaskRunState.Running:
+                return failurePaused ? new StatusBadge("故障暂停") : null;
+            case TaskRunState.Queued:
+                return new StatusBadge("排队中");
+            case TaskRunState.Skipped:
+                return new StatusBadge("本轮未执行");
+            case TaskRunState.Succeeded:
+            case TaskRunState.Failed:
+            case TaskRunState.Stopped:
+                return (string?)lastRun?["state"] == state.ToString()
+                    ? HistoryText(lastRun!) : new StatusBadge(StatusText(state.ToString())!);
+            default:
+                return lastRun == null ? null : HistoryText(lastRun, "上次 ");
+        }
     }
 
-    private void Show(Grid title, string text)
+    private static string? StatusText(string? state) => state switch
+    {
+        nameof(TaskRunState.Succeeded) => "已完成",
+        nameof(TaskRunState.Failed) => "失败",
+        nameof(TaskRunState.Stopped) => "已停止",
+        nameof(TaskRunState.Running) => "运行中断（开始时间）",
+        _ => null,
+    };
+
+    private static StatusBadge? HistoryText(JObject record, string prefix = "")
+    {
+        var state = (string?)record["state"];
+        var status = StatusText(state);
+        if (status == null) return null;
+        if (ReadTime(record) is not { } at) return new StatusBadge(status, Prefix: prefix);
+        var local = at.ToLocalTime();
+        var today = DateTime.Today;
+        var date = local.ToString(local.Year == today.Year ? "M月d日" : "yyyy年M月d日", CultureInfo.InvariantCulture);
+        var timeAndStatus = local.ToString("HH:mm", CultureInfo.InvariantCulture) + " " + status;
+        if (local.Date != today) return new StatusBadge(" " + timeAndStatus, date, prefix);
+        var color = state == nameof(TaskRunState.Succeeded) ? Brushes.SeaGreen : null;
+        return new StatusBadge(date + " " + timeAndStatus, Prefix: prefix, Color: color);
+    }
+
+    private void Show(Grid title, StatusBadge badge)
     {
         if (!labels.TryGetValue(title, out var label))
         {
             var column = new ColumnDefinition { Width = GridLength.Auto };
-            var badge = new TextBlock
+            var text = new TextBlock
             {
                 FontSize = 11,
                 Margin = new Thickness(6, 0, 2, 0),
                 VerticalAlignment = VerticalAlignment.Center,
                 IsHitTestVisible = false,
             };
-            Grid.SetColumn(badge, title.ColumnDefinitions.Count);
+            Grid.SetColumn(text, title.ColumnDefinitions.Count);
             title.ColumnDefinitions.Add(column);
-            title.Children.Add(badge);
-            label = (column, badge);
-            labels.Add(title, label);
+            title.Children.Add(text);
+            label = (column, text, null);
         }
-        if (label.Text.Text != text) label.Text.Text = text;
+        if (label.Badge == badge) return;
+        var inlines = label.Text.Inlines!;
+        inlines.Clear();
+        if (badge.NonTodayDate is { } date)
+        {
+            if (badge.Prefix.Length > 0) inlines.Add(new Run(badge.Prefix));
+            inlines.Add(new Run(date) { Foreground = Brushes.IndianRed });
+            inlines.Add(new Run(badge.Text));
+        }
+        else
+        {
+            var run = new Run(badge.Prefix + badge.Text);
+            if (badge.Color != null) run.Foreground = badge.Color;
+            inlines.Add(run);
+        }
+        labels[title] = (label.Column, label.Text, badge);
     }
 
     private void Hide(Grid title)
     {
-        var (column, text) = labels[title];
+        var (column, text, _) = labels[title];
         title.Children.Remove(text);
         title.ColumnDefinitions.Remove(column);
         labels.Remove(title);
