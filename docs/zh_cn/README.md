@@ -5,12 +5,13 @@
 - [功能流程总览](tasks/README.md)：按功能查看流程图、选项、限制和实现映射。
 - [安装与使用](../../README.md)：查看下载方式、设备要求和功能介绍。
 - [前端扩展与设置](../../assets/resource/custom/doc.md)：查看开发者选单、日志保留、更新源和更新渠道说明。
+- [2.2.0 更新公告](release_notes/2.2.0.md)
 - [2.0 发布公告](release_notes/2.0.md)
 - [1.5 发布说明](release_notes/1.5.md)：查看 1.5 的配置继承与验证范围。
 - [统一异常恢复](tasks/task_recovery.md)：查看所有模块的故障重启或暂停、继续设置及资源额度保护。
 
 - [自定义活动关卡](tasks/custom_stage.md)：录制活动入口和关卡图片，保存并使用多份命名配置。
-- [每日政务扫荡](tasks/daily_affairs.md)：消耗体力前先按三个开关最大次数扫荡战争、情报和商业关卡。
+- [每日政务扫荡](tasks/daily_affairs.md)：消耗体力前按各项目的三天间隔处理战争演习、情报搜集和商业经营。
 - [运行中修改配置](tasks/runtime_settings.md)：任务执行中编辑选项与关卡，按实际读取时点说明何时生效。
 - [自动更新与配置继承](tasks/config_migration.md)：同目录更新保留配置与关卡截图、旧版首次接入限制，以及可选的跨目录导入。
 

@@ -9,13 +9,13 @@
 
 基于 [MaaFramework](https://github.com/MaaXYZ/MaaFramework) 的「天下布魔」日常自动化助手
 
-RShock 维护版本，当前发布版本 **2.0**，在原 TKFMaa 项目基础上独立维护。
+RShock 维护版本，当前发布版本 **2.2.0**，在原 TKFMaa 项目基础上独立维护。
 
 </div>
 
 ## 安装与使用
 
-1. 从 [RShock/TKFMaaR Releases](https://github.com/RShock/TKFMaaR/releases/latest) 下载对应系统的完整压缩包并解压，普通 Windows 电脑选择 `TKFMaaR-win-x86_64-v2.0.zip`
+1. 从 [RShock/TKFMaaR Releases](https://github.com/RShock/TKFMaaR/releases/latest) 下载对应系统的完整压缩包并解压，普通 Windows 电脑选择 `TKFMaaR-win-x86_64-v2.2.0.zip`
 2. 运行 `DependencySetup_依赖库安装_win.bat`
 3. 运行 `MFAAvalonia.exe`
 
@@ -41,7 +41,7 @@ RShock 维护版本，当前发布版本 **2.0**，在原 TKFMaa 项目基础上
 - [x] 调教
 - [x] 全境征才（为这顿醋包的饺子:)）
 - [x] 奖励领取
-- [ ] 协会奖励领取没做呢:(
+- [x] 领取协会奖励（可设为仅周末）
 
 ## 免责声明
 
