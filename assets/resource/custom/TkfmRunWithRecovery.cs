@@ -112,7 +112,7 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
                 && context.GetHitCount(nonRetryableHit, out var nonRetryableHits)
                 && nonRetryableHits > previousNonRetryableHits)
             {
-                string reason = label + "尚未满足游戏内的前置条件。";
+                string reason = (string?)param["non_retryable_reason"] ?? label + "尚未满足游戏内的前置条件。";
                 return restartOnFailure
                     ? FinishFailure(processor, reason, continueAfterFailure)
                     : PauseForFailure(processor, reason, continueAfterFailure);

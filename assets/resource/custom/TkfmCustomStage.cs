@@ -33,7 +33,14 @@ public sealed class TkfmCustomStage : IMaaCustomAction
 {
     public string Name { get; set; } = "TkfmCustomStage";
     internal const string ConfigKey = "TkfmCustomStageProfilesV1";
+    internal const int DefaultStageCost = 35;
     private const string ServiceKey = "TKFMaa.CustomStage.UI";
+    private static readonly string[] StageSearchNodes =
+    {
+        "CustomStageOpenTarget",
+        "CustomStageSearchRightFirst", "CustomStageSearchDownFirst", "CustomStageSearchLeft",
+        "CustomStageSearchUp", "CustomStageSearchRightAgain", "CustomStageSearchDownAgain"
+    };
 
     public TkfmCustomStage()
     {
@@ -87,10 +94,29 @@ public sealed class TkfmCustomStage : IMaaCustomAction
                     + (string)profile["name"] + "”。", changeColor: false);
             string resource = ResourceRoot(processor);
             string entry = TemplatePath(resource, (string)profile["entry"]);
-            string stage = TemplatePath(resource, (string)profile["stage"]);
-            string page = TemplatePath(resource, (string)profile["page"]);
+            string stage = (string)profile["stage"];
             int cost = (int?)profile["cost"] ?? 0;
             if (cost < 1 || cost > 999) throw new InvalidOperationException("请填写关卡每次消耗的体力（1-999）");
+            bool randomStage = string.IsNullOrWhiteSpace(stage);
+            if (randomStage && !SupportsStageCost(cost))
+                throw new InvalidOperationException(UnsupportedStageCostMessage(cost));
+            var listPage = randomStage
+                ? new JObject
+                {
+                    ["enabled"] = true,
+                    ["recognition"] = new JObject
+                    {
+                        ["type"] = "And", ["param"] = new JObject
+                        {
+                            ["all_of"] = new JArray("__CustomStageListBack", "__CustomStageEventExchange"), ["box_index"] = 0
+                        }
+                    }
+                }
+                : ImageRecognition(TemplatePath(resource, (string)profile["page"]), new JArray(50, 60, 600, 80));
+            var target = randomStage
+                ? ImageRecognition($"CustomStage/Cost{cost}720.png", new JArray(0, 232, 720, 916), 0.94)
+                : ImageRecognition(TemplatePath(resource, stage), new JArray(0, 160, 720, 1000));
+            if (randomStage) target["recognition"]["param"]["order_by"] = "Random";
             var overrides = new JObject
             {
                 // After the score check and daily affairs, resume the verified list or reopen the activity.
@@ -101,8 +127,10 @@ public sealed class TkfmCustomStage : IMaaCustomAction
                 ["DailyStaminaPresetRouteStart"] = new JObject { ["next"] = new JArray("CustomStageActivityRouter") },
                 ["CustomStageOpenLimitedActivities"] = new JObject { ["enabled"] = true },
                 ["CustomStageEntryImage"] = ImageRecognition(entry, new JArray(0, 160, 720, 1000)),
-                ["CustomStageTargetImage"] = ImageRecognition(stage, new JArray(0, 160, 720, 1000)),
-                ["CustomStageListPage"] = ImageRecognition(page, new JArray(50, 60, 600, 80)),
+                ["__CustomStageEntryBannerMatch"] = ImageRecognition(entry, new JArray(70, 252, 580, 397)),
+                ["__CustomStageEntryFirstCardMatch"] = ImageRecognition(entry, new JArray(70, 653, 194, 103)),
+                ["CustomStageTargetImage"] = target,
+                ["CustomStageListPage"] = listPage,
                 ["DailyStaminaReturnMainFromStageList"] = new JObject
                 {
                     ["recognition"] = new JObject
@@ -120,6 +148,16 @@ public sealed class TkfmCustomStage : IMaaCustomAction
                     ["action"] = new JObject { ["type"] = "DoNothing" }, ["next"] = new JArray()
                 }
             };
+            if (randomStage)
+            {
+                overrides["CustomStageStageNotFound"] = new JObject
+                {
+                    ["focus"] = new JObject
+                    {
+                        ["Node.Recognition.Succeeded"] = $"自定义关卡：已完成六段顺时针搜索，未找到可选中的 {cost} 体力关卡。"
+                    }
+                };
+            }
             PrependRoute(context, overrides, "DailyStaminaDone", "CustomStageScoreAfter");
             PrependRoute(context, overrides, "DailyStaminaBattleExitToMain", "CustomStageScoreAfter");
             foreach (string name in new[] { "DailyStaminaPresetStaminaEnough", "DailyStaminaPresetStaminaLow" })
@@ -129,8 +167,9 @@ public sealed class TkfmCustomStage : IMaaCustomAction
                 staminaNode["recognition"]["param"]["custom_recognition_param"]["cost"] = cost;
                 overrides[name] = staminaNode;
             }
-            processor.AddLog("[自定义关卡] 使用配置“" + (string)profile["name"]
-                + "”：无状态识别出征、活动入口和关卡截图；关卡列表最多下滚6屏。", changeColor: false);
+            string selection = randomStage ? $"寻找 {cost} 体力关卡" : "寻找关卡截图";
+            processor.AddLog($"[自定义关卡] 使用配置“{(string)profile["name"]}”。{selection}，未命中时按右2、下6、左2、上6、右2、下6搜索。",
+                changeColor: false);
             var result = context.RunTask("CustomStageWithRecovery", overrides.ToString(Formatting.None));
             return !context.IsCancellationRequested && result?.Status == MaaJobStatus.Succeeded;
         }
@@ -147,7 +186,13 @@ public sealed class TkfmCustomStage : IMaaCustomAction
     {
         if (!context.GetNodeData(node, out var raw) || JObject.Parse(raw)["next"] is not JArray next)
             throw new InvalidOperationException("缺少关卡路由：" + node);
-        if (!next.Values<string>().Contains(route)) next.AddFirst(route);
+        // GetNodeData can return NodeAttr objects for routes written as strings.
+        // Keep the original tokens so anchor and jump-back behavior survive the override.
+        bool hasRoute = next.Any(item => item is JObject attributes
+            ? (string)attributes["name"] == route && (bool?)attributes["anchor"] != true
+                && (bool?)attributes["jump_back"] != true
+            : item.Type == JTokenType.String && (string)item == route);
+        if (!hasRoute) next.AddFirst(route);
         overrides[node] = new JObject { ["next"] = next };
     }
 
@@ -226,8 +271,8 @@ public sealed class TkfmCustomStage : IMaaCustomAction
         }
         if (phase == "round" && !nearLimit && !readingLost)
         {
-            // Each confirmed return to the list starts a new navigation visit. Resource budgets persist.
-            foreach (string node in new[] { "CustomStageOpenTarget", "CustomStageScrollDown" })
+            // Each subsequent selection starts with the current screen and gets a fresh search budget.
+            foreach (string node in StageSearchNodes)
                 if (context.GetHitCount(node, out var hits) && hits > 0 && !context.ClearHitCount(node)) return false;
         }
         return context.OverridePipeline(overrides.ToString(Formatting.None));
@@ -320,14 +365,19 @@ public sealed class TkfmCustomStage : IMaaCustomAction
         return overrides;
     }
 
-    private static JObject ImageRecognition(string path, JArray roi) => new JObject
+    internal static bool SupportsStageCost(int cost) => cost is 15 or 25 or 35;
+
+    internal static string UnsupportedStageCostMessage(int cost) =>
+        $"当前作者还没有提供 {cost} 体力关卡的识别支持，请更新 Maa 版本。";
+
+    private static JObject ImageRecognition(string path, JArray roi, double threshold = 0.85) => new JObject
     {
         ["enabled"] = true,
         ["recognition"] = new JObject
         {
             ["type"] = "TemplateMatch", ["param"] = new JObject
             {
-                ["template"] = new JArray(path), ["roi"] = roi, ["threshold"] = 0.85
+                ["template"] = new JArray(path), ["roi"] = roi, ["threshold"] = threshold
             }
         }
     };
@@ -604,7 +654,8 @@ internal sealed class CustomStageUI : IDisposable
             HorizontalAlignment = original.HorizontalAlignment, VerticalAlignment = original.VerticalAlignment,
             MaxHeight = original.MaxHeight
         };
-        foreach (var name in original.Classes) combo.Classes.Add(name);
+        foreach (var name in original.Classes)
+            if (!name.StartsWith(":", StringComparison.Ordinal)) combo.Classes.Add(name);
         Grid.SetColumn(combo, Grid.GetColumn(original)); Grid.SetRow(combo, Grid.GetRow(original));
         var row = new CustomStageSelectRow { Owner = this, Processor = processor, Task = task, Combo = combo };
         combo.Tag = row;
@@ -699,9 +750,19 @@ internal sealed class CustomStageUI : IDisposable
 
 internal sealed class CustomStageDraft
 {
-    internal JObject Data;
+    internal readonly JObject Data;
+    internal readonly JObject SavedData;
     internal byte[] Entry, Stage, Page;
-    internal CustomStageDraft(JObject data) { Data = data; }
+    internal int RenameOrder;
+    internal bool HasStageScreenshot => Stage != null || !string.IsNullOrWhiteSpace((string)Data["stage"]);
+
+    internal CustomStageDraft(JObject data, bool saved = false)
+    {
+        Data = data;
+        if (saved) SavedData = (JObject)data.DeepClone();
+    }
+
+    internal string StoredCostText => ((int?)Data["cost"] ?? TkfmCustomStage.DefaultStageCost).ToString();
     public override string ToString() => (string)Data["name"] ?? "未命名";
 }
 
@@ -710,16 +771,21 @@ internal sealed class CustomStageEditor : Window
     private readonly MaaProcessor processor;
     private readonly string resource;
     private readonly List<CustomStageDraft> drafts = new List<CustomStageDraft>();
-    private readonly ComboBox choices = new ComboBox { HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Stretch };
+    private readonly ListBox choices = new ListBox { MinHeight = 42, MaxHeight = 112 };
+    private readonly Button delete;
     private readonly TextBox name = new TextBox { Watermark = "给配置取一个名字（最多64字）", MaxLength = 64 };
     private readonly TextBox cost = new TextBox { Watermark = "每次消耗体力：1-999", MaxLength = 3 };
     private readonly TextBlock status = new TextBlock { TextWrapping = TextWrapping.Wrap };
     private readonly Image entryPreview = new Image { Height = 100, Stretch = Stretch.Uniform };
     private readonly Image stagePreview = new Image { Height = 100, Stretch = Stretch.Uniform };
+    private readonly TextBlock randomStageHint = new TextBlock { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock unsupportedCost = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = Brushes.Red };
+    private readonly Button clearStage;
     private readonly StackPanel form = new StackPanel { Spacing = 12 };
     private readonly DispatcherTimer timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
     private CustomStageDraft current;
     private string confirmDelete;
+    private int renameOrder;
     private bool loading;
     private bool closed;
     private Window capture;
@@ -735,14 +801,16 @@ internal sealed class CustomStageEditor : Window
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         var config = TkfmCustomStage.ReadConfig(processor);
         foreach (var item in (config["profiles"] as JArray ?? new JArray()).OfType<JObject>())
-            drafts.Add(new CustomStageDraft((JObject)item.DeepClone()));
+            drafts.Add(new CustomStageDraft((JObject)item.DeepClone(), saved: true));
         form.Children.Add(new TextBlock { Text = "运行中也可编辑和保存。关卡选择下次启动队列生效；已保存配置的图片和体力消耗在该步骤开始时读取，当前正在执行的步骤保持原值。切换配置保留本窗口编辑，关闭窗口放弃未保存的修改。",
             TextWrapping = TextWrapping.Wrap });
+        form.Children.Add(new TextBlock { Text = "关卡配置" });
         form.Children.Add(choices);
         var tools = new WrapPanel { Orientation = Avalonia.Layout.Orientation.Horizontal };
         tools.Children.Add(Button("新增", () => Add(false)));
         tools.Children.Add(Button("复制", () => Add(true)));
-        tools.Children.Add(Button("删除", Delete));
+        delete = Button("删除", Delete);
+        tools.Children.Add(delete);
         form.Children.Add(tools);
         form.Children.Add(new TextBlock { Text = "配置名称" });
         form.Children.Add(name);
@@ -751,7 +819,12 @@ internal sealed class CustomStageEditor : Window
         form.Children.Add(Button("设置活动入口截图", async () => await Capture(false)));
         form.Children.Add(entryPreview);
         form.Children.Add(Button("设置关卡截图", async () => await Capture(true)));
+        form.Children.Add(randomStageHint);
+        form.Children.Add(unsupportedCost);
         form.Children.Add(stagePreview);
+        clearStage = Button("清除关卡截图", ClearStage);
+        form.Children.Add(clearStage);
+        cost.TextChanged += (_, __) => UpdateCostMode();
         form.Children.Add(new TextBlock
         {
             Text = "请在“限时活动”里选择一个打开后直接显示纵向关卡列表的活动。截图时框选活动或关卡名称，避开倒计时、体力数值和动画。",
@@ -786,9 +859,15 @@ internal sealed class CustomStageEditor : Window
         choices.SelectionChanged += (_, __) =>
         {
             if (loading) return;
-            Remember(); confirmDelete = null;
-            current = choices.SelectedItem as CustomStageDraft;
+            Remember();
+            confirmDelete = null;
+            current = (choices.SelectedItem as ListBoxItem)?.Tag as CustomStageDraft;
             Load();
+        };
+        name.TextChanged += (_, __) =>
+        {
+            if (!loading && current != null && choices.SelectedItem is ListBoxItem item)
+                item.Content = DraftLabel(current, name.Text);
         };
         timer.Tick += (_, __) =>
         {
@@ -817,16 +896,33 @@ internal sealed class CustomStageEditor : Window
     private void Remember()
     {
         if (current == null || loading) return;
-        current.Data["name"] = (name.Text ?? "").Trim();
-        current.Data["cost_text"] = cost.Text ?? "";
+        string label = (name.Text ?? "").Trim();
+        if (!string.Equals(label, (string)current.Data["name"], StringComparison.Ordinal))
+        {
+            current.Data["name"] = label;
+            current.RenameOrder = ++renameOrder;
+        }
+        if (cost.Text == current.StoredCostText) current.Data.Remove("cost_text");
+        else current.Data["cost_text"] = cost.Text ?? "";
+    }
+
+    private static string DraftLabel(CustomStageDraft draft, string label)
+    {
+        label = string.IsNullOrWhiteSpace(label) ? "未命名" : label.Trim();
+        return label + (draft.SavedData == null ? "（新建未保存）" : "（已保存）");
     }
 
     private void RefreshChoices()
     {
         loading = true;
-        choices.ItemsSource = null;
-        choices.ItemsSource = drafts.ToArray();
-        choices.SelectedItem = current;
+        var items = drafts.Select(draft => new ListBoxItem
+        {
+            Tag = draft,
+            Content = DraftLabel(draft, (string)draft.Data["name"])
+        }).ToArray();
+        choices.ItemsSource = items;
+        choices.SelectedItem = items.FirstOrDefault(item => ReferenceEquals(item.Tag, current));
+        choices.IsVisible = items.Length > 0;
         loading = false;
         Load();
     }
@@ -835,16 +931,53 @@ internal sealed class CustomStageEditor : Window
     {
         loading = true;
         name.Text = (string)current?.Data["name"] ?? "";
-        cost.Text = (string)current?.Data["cost_text"] ?? ((int?)current?.Data["cost"] ?? 50).ToString();
-        name.IsEnabled = cost.IsEnabled = current != null;
+        cost.Text = (string)current?.Data["cost_text"] ?? current?.StoredCostText ?? TkfmCustomStage.DefaultStageCost.ToString();
+        name.IsEnabled = cost.IsEnabled = delete.IsEnabled = current != null;
+        delete.Content = confirmDelete == null ? "删除" : "确认删除";
+        UpdateCostMode();
+        string entryError = LoadPreview(entryPreview, false);
+        string stageError = LoadPreview(stagePreview, true);
+        var errors = new[] { entryError, stageError }.Where(error => error != null).ToArray();
+        status.Text = errors.Length > 0 ? string.Join("。", errors) + "。可重新截取或删除此配置。"
+            : current == null ? "没有配置。点击新增开始设置。" : "编辑后点击“保存并使用此关卡”生效。";
+        loading = false;
+    }
+
+    private void UpdateCostMode()
+    {
+        bool hasScreenshot = current?.HasStageScreenshot == true;
+        stagePreview.IsVisible = clearStage.IsVisible = hasScreenshot;
+        randomStageHint.IsVisible = current != null && !hasScreenshot;
+        bool validCost = int.TryParse(cost.Text, out int value) && value is >= 1 and <= 999;
+        string label = validCost ? $"{value} 体力" : "上方填写的体力";
+        randomStageHint.Text = $"如果不设置关卡截图，程序会自动寻找随机一关消耗 {label} 的关卡并游玩。";
+        unsupportedCost.IsVisible = randomStageHint.IsVisible && validCost && !TkfmCustomStage.SupportsStageCost(value);
+        if (unsupportedCost.IsVisible) unsupportedCost.Text = TkfmCustomStage.UnsupportedStageCostMessage(value);
+    }
+
+    private void ClearStage()
+    {
+        if (current == null || TkfmCustomStage.EditingBlocked(processor)) return;
+        Remember();
+        current.Stage = current.Page = null;
+        current.Data.Remove("stage");
+        current.Data.Remove("page");
+        Load();
+        status.Text = "已清除关卡截图，点击保存后生效。";
+    }
+
+    private string LoadPreview(Image view, bool stage)
+    {
         try
         {
-            SetPreview(entryPreview, ImageBytes(current, false));
-            SetPreview(stagePreview, ImageBytes(current, true));
-            status.Text = current == null ? "没有配置。点击新增开始设置。" : "编辑后点击“保存并使用此关卡”生效。";
+            SetPreview(view, ImageBytes(current, stage));
+            return null;
         }
-        catch (Exception ex) { status.Text = "截图无法读取，请重新设置：" + ex.Message; }
-        finally { loading = false; }
+        catch (Exception)
+        {
+            SetPreview(view, null);
+            return (stage ? "关卡" : "活动入口") + "截图无法读取";
+        }
     }
 
     private byte[] ImageBytes(CustomStageDraft draft, bool stage)
@@ -869,7 +1002,7 @@ internal sealed class CustomStageEditor : Window
     {
         if (TkfmCustomStage.EditingBlocked(processor)) return;
         Remember();
-        var data = copy && current != null ? (JObject)current.Data.DeepClone() : new JObject { ["cost"] = 50 };
+        var data = copy && current != null ? (JObject)current.Data.DeepClone() : new JObject { ["cost"] = TkfmCustomStage.DefaultStageCost };
         string stem = copy && current != null ? ((string)current.Data["name"] ?? "配置") + " 副本" : "新配置";
         stem = stem.Substring(0, Math.Min(stem.Length, 54));
         string candidate = stem; int suffix = 2;
@@ -883,14 +1016,45 @@ internal sealed class CustomStageEditor : Window
 
     private void Delete()
     {
-        if (TkfmCustomStage.EditingBlocked(processor) || current == null) return;
-        if (confirmDelete != (string)current.Data["id"])
+        if (closed || TkfmCustomStage.EditingBlocked(processor) || current == null) return;
+        string id = (string)current.Data["id"];
+        if (confirmDelete != id)
         {
-            confirmDelete = (string)current.Data["id"];
-            status.Text = "再次点击“删除”移除“" + current + "”。点击保存后生效；关闭窗口可放弃删除。";
+            confirmDelete = id;
+            delete.Content = "确认删除";
+            status.Text = "点击“确认删除”移除“" + (string)(current.SavedData ?? current.Data)["name"] + "”。";
             return;
         }
-        drafts.Remove(current); current = drafts.FirstOrDefault(); confirmDelete = null; RefreshChoices();
+
+        var removed = current;
+        try
+        {
+            if (removed.SavedData != null)
+            {
+                // Delete the stored ID only. Other drafts and their pending captures stay in the editor.
+                var config = TkfmCustomStage.ReadConfig(processor);
+                var profiles = config["profiles"] as JArray;
+                var saved = profiles?.OfType<JObject>().FirstOrDefault(item => (string)item["id"] == id);
+                if (saved != null)
+                {
+                    saved.Remove();
+                    if ((string)config["selected"] == id)
+                        config["selected"] = (string)profiles.OfType<JObject>().FirstOrDefault()?["id"] ?? "";
+                    processor.InstanceConfiguration.SetValue(TkfmCustomStage.ConfigKey, config);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            status.Text = "删除失败，" + ex.Message;
+            return;
+        }
+
+        drafts.Remove(removed);
+        current = drafts.FirstOrDefault();
+        confirmDelete = null;
+        RefreshChoices();
+        status.Text = "已删除“" + (string)(removed.SavedData ?? removed.Data)["name"] + "”。";
     }
 
     private async Task Capture(bool stage)
@@ -933,32 +1097,82 @@ internal sealed class CustomStageEditor : Window
         finally { capture = null; }
     }
 
+    private void ValidateScreenshot(string label, string role, byte[] captured, JToken savedPath)
+    {
+        if (captured != null) return;
+        string relative = (string)savedPath;
+        if (string.IsNullOrWhiteSpace(relative))
+            throw new InvalidOperationException($"“{label}”尚未设置{role}，请先截取");
+        try { TkfmCustomStage.TemplatePath(resource, relative); }
+        catch (InvalidOperationException ex)
+        {
+            throw new InvalidOperationException($"“{label}”的{role}无法使用。{ex.Message}", ex);
+        }
+    }
+
     private void Save()
     {
         if (closed || TkfmCustomStage.EditingBlocked(processor)) return;
-        Remember();
         try
         {
+            Remember();
             if (!string.Equals(resource, TkfmCustomStage.ResourceRoot(processor), StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("资源已切换，请关闭设置后重新打开");
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var draft in drafts)
+
+            var pending = new List<(CustomStageDraft Draft, JObject Item)>();
+            string selectedId = "";
+            bool overwroteSelected = false;
+            var byName = drafts.GroupBy(draft => ((string)draft.Data["name"] ?? "").Trim(),
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var group in byName)
             {
-                string label = ((string)draft.Data["name"] ?? "").Trim();
-                if (label.Length == 0 || label.Length > 64 || label.Any(char.IsControl) || !names.Add(label))
-                    throw new InvalidOperationException("每份配置必须有唯一名称（1-64字），请检查重复或空名称");
-                if (!int.TryParse((string)draft.Data["cost_text"] ?? ((int?)draft.Data["cost"] ?? 50).ToString(), out var value)
-                    || value < 1 || value > 999)
-                    throw new InvalidOperationException("“" + label + "”的体力消耗须为1-999的整数");
-                draft.Data["name"] = label; draft.Data["cost"] = value;
-                if (draft.Entry == null) TkfmCustomStage.TemplatePath(resource, (string)draft.Data["entry"]);
-                if (draft.Stage == null) TkfmCustomStage.TemplatePath(resource, (string)draft.Data["stage"]);
-                if (draft.Page == null) TkfmCustomStage.TemplatePath(resource, (string)draft.Data["page"]);
+                // The last rename provides the replacement. Keep the existing name owner's
+                // ID so tasks that already refer to that name continue to find it.
+                var draft = group.OrderByDescending(candidate => candidate.RenameOrder)
+                    .ThenByDescending(candidate => candidate == current).First();
+                var owner = group.FirstOrDefault(candidate => string.Equals(
+                    ((string)candidate.SavedData?["name"])?.Trim(), group.Key, StringComparison.OrdinalIgnoreCase));
+                var item = (JObject)draft.Data.DeepClone();
+                item["id"] = (string)(owner ?? draft).Data["id"];
+                string label = ((string)item["name"] ?? "").Trim();
+                bool selected = group.Contains(current);
+                bool overwriting = group.Count() > 1;
+                bool hasCaptures = draft.Entry != null || draft.Stage != null || draft.Page != null;
+
+                // Old profiles with missing files must not block an unrelated save.
+                if (selected || overwriting || hasCaptures || !JToken.DeepEquals(item, draft.SavedData))
+                {
+                    if (label.Length == 0 || label.Length > 64 || label.Any(char.IsControl))
+                        throw new InvalidOperationException("配置名称须为 1-64 字，且不能包含控制字符");
+                    if (!int.TryParse((string)item["cost_text"] ?? draft.StoredCostText, out var value)
+                        || value < 1 || value > 999)
+                        throw new InvalidOperationException($"“{label}”的体力消耗须为1-999的整数");
+                    item["name"] = label;
+                    item["cost"] = value;
+                    ValidateScreenshot(label, "活动入口截图", draft.Entry, item["entry"]);
+                    if (draft.HasStageScreenshot)
+                    {
+                        ValidateScreenshot(label, "关卡截图", draft.Stage, item["stage"]);
+                        ValidateScreenshot(label, "关卡列表标记", draft.Page, item["page"]);
+                    }
+                    else
+                    {
+                        item.Remove("stage");
+                        item.Remove("page");
+                    }
+                }
+                item.Remove("cost_text");
+                pending.Add((draft, item));
+                if (selected)
+                {
+                    selectedId = (string)item["id"] ?? "";
+                    overwroteSelected = overwriting;
+                }
             }
+
             var saved = new JArray();
-            foreach (var draft in drafts)
+            foreach (var (draft, item) in pending)
             {
-                var item = (JObject)draft.Data.DeepClone(); item.Remove("cost_text");
                 // Immutable filenames prevent the native template cache from reusing replaced crops.
                 string revision = "UserStages/" + Guid.NewGuid().ToString("N");
                 foreach (var pair in new[] { (Key: "entry", Bytes: draft.Entry), (Key: "stage", Bytes: draft.Stage), (Key: "page", Bytes: draft.Page) })
@@ -974,17 +1188,19 @@ internal sealed class CustomStageEditor : Window
             }
             processor.InstanceConfiguration.SetValue(TkfmCustomStage.ConfigKey, new JObject
             {
-                ["version"] = 1, ["selected"] = (string)current?.Data["id"] ?? "", ["profiles"] = saved
+                ["version"] = 1, ["selected"] = selectedId, ["profiles"] = saved
             });
-            for (int i = 0; i < drafts.Count; i++)
-            {
-                drafts[i].Data = (JObject)saved[i].DeepClone();
-                drafts[i].Entry = drafts[i].Stage = drafts[i].Page = null;
-            }
+            drafts.Clear();
+            foreach (var item in saved.OfType<JObject>())
+                drafts.Add(new CustomStageDraft((JObject)item.DeepClone(), saved: true));
+            current = drafts.FirstOrDefault(draft => (string)draft.Data["id"] == selectedId);
+            confirmDelete = null;
+            renameOrder = 0;
             RefreshChoices();
-            status.Text = current == null ? "已保存：没有自定义关卡；正在执行的步骤继续使用已加载的配置。"
-                : "已保存关卡：“" + current + "”。关卡选择下次启动队列生效；图片修改在该步骤下次加载时生效。";
-            Saved?.Invoke((string)current?.Data["id"] ?? "");
+            status.Text = current == null ? "已保存：没有自定义关卡。"
+                : (overwroteSelected ? "已覆盖同名关卡" : "已保存关卡") + "“" + current
+                    + "”。关卡选择下次启动队列生效。";
+            Saved?.Invoke(selectedId);
             processor.AddLog("[自定义关卡] 已保存" + drafts.Count + "份配置；默认：" + (current?.ToString() ?? "无"), changeColor: false);
         }
         catch (Exception ex) { status.Text = "未保存：" + ex.Message; }
@@ -1049,7 +1265,9 @@ internal sealed class CustomStageCapture : Window
         canvas.PointerCaptureLost += (_, __) => dragging = false;
         freeze.Click += async (_, __) =>
         {
-            if (frame == null || fetching || closed) return;
+            if (frame == null || frozen || closed) return;
+            try { EnsureLiveView(); }
+            catch (InvalidOperationException ex) { message.Text = ex.Message; return; }
             frozen = true; timer.Stop(); freeze.IsEnabled = false;
             if (!stage)
             {
@@ -1080,8 +1298,9 @@ internal sealed class CustomStageCapture : Window
         };
         refresh.Click += async (_, __) =>
         {
-            if (closed || fetching) return;
+            if (closed) return;
             frozen = false; canSelect = false; dragging = false; selection.IsVisible = false; confirm.IsEnabled = false;
+            freeze.IsEnabled = frame != null;
             await RefreshFrame(); if (!closed && !frozen && frame != null) timer.Start();
         };
         confirm.Click += (_, __) =>
@@ -1149,7 +1368,8 @@ internal sealed class CustomStageCapture : Window
     private async Task RefreshFrame()
     {
         if (fetching || frozen || closed) return;
-        fetching = true; freeze.IsEnabled = false;
+        // Keep the displayed frame available while its replacement is prepared.
+        fetching = true;
         try
         {
             EnsureLiveView();
@@ -1166,8 +1386,14 @@ internal sealed class CustomStageCapture : Window
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            timer.Stop(); frame = null; freeze.IsEnabled = false;
-            if (!closed) message.Text = "无法读取右侧实时画面：" + ex.Message + "。确认右侧画面正常后点击“刷新 / 重新截取”。";
+            if (closed || frozen) return;
+            timer.Stop();
+            bool canFreeze = frame != null && !processor.IsClosed && processor.ViewModel?.IsConnected == true;
+            if (!canFreeze) frame = null;
+            freeze.IsEnabled = canFreeze;
+            message.Text = "无法刷新右侧实时画面：" + ex.Message + (canFreeze
+                ? "。可截取当前预览，或点击“刷新 / 重新截取”等待新画面。"
+                : "。确认右侧画面正常后点击“刷新 / 重新截取”。");
         }
         finally { fetching = false; }
     }

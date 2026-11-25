@@ -83,13 +83,18 @@
     },
     "CustomStageScoreSelect": {
         "next": [
+            "[JumpBack]CommonWaitLoading",
             "CustomStageOpenTarget",
-            "CustomStageScrollDown",
-            "[JumpBack]CommonWaitLoading"
-        ],
-        "on_error": [
+            "CustomStageSearchRightFirst",
+            "CustomStageSearchDownFirst",
+            "CustomStageSearchLeft",
+            "CustomStageSearchUp",
+            "CustomStageSearchRightAgain",
+            "CustomStageSearchDownAgain",
             "CustomStageStageNotFound"
-        ]
+        ],
+        "timeout": 6000,
+        "on_error": ["CustomStageNavigationNotFound"]
     },
     "CustomStageScoreAfter": {
         "recognition": {
@@ -263,7 +268,8 @@
                 "custom_action_param": {
                     "entry": "CustomStageActivityRouter",
                     "label": "自定义关卡",
-                    "non_retryable_hit": "CustomStageProgressLocked",
+                    "non_retryable_hit": "CustomStageSelectionFailure",
+                    "non_retryable_reason": "自定义关卡未能选中可游玩的关卡，详情见任务日志。",
                     "initialize": "DailyAffairsInitialize"
                 }
             }
@@ -399,6 +405,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "CustomStageOpenExpedition",
+            "CustomStageAttackEntry",
             "CustomStageOpenEntry",
             "CustomStageOpenLimitedActivities",
             "CustomStageReturnToActivityTab"
@@ -453,6 +460,76 @@
         "focus": {
             "Node.Action.Succeeded": "自定义关卡：已点击出征图片中心，继续按当前画面识别活动入口。"
         }
+    },
+    "__CustomStageEntryBannerMatch": {
+        "enabled": false,
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {"template": "Common/TopLeftBack720.png"}
+        }
+    },
+    "__CustomStageEntryFirstCardMatch": {
+        "enabled": false,
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {"template": "Common/TopLeftBack720.png"}
+        }
+    },
+    "__CustomStageCaesarSelectedTitle": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {"template": "CustomStage/CaesarSelectedTitle720.png", "roi": [65, 765, 133, 64], "threshold": 0.9}
+        }
+    },
+    "__CustomStageCaesarFirstCard": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {"template": "CustomStage/CaesarFirstCard720.png", "roi": [72, 656, 190, 97], "threshold": 0.9}
+        }
+    },
+    "__CustomStageConfiguredCaesarSelected": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": ["__CustomStageEntryFirstCardMatch", "__CustomStageCaesarFirstCard", "__CustomStageCaesarSelectedTitle"]
+            }
+        }
+    },
+    "__CustomStageConfiguredEventSelected": {
+        "recognition": {
+            "type": "Or",
+            "param": {"any_of": ["__CustomStageEntryBannerMatch", "__CustomStageConfiguredCaesarSelected"]}
+        }
+    },
+    "__CustomStageEventAttackButton": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {"template": "CustomStage/EventAttack720.png", "roi": [268, 1070, 184, 162], "threshold": 0.9}
+        }
+    },
+    "CustomStageAttackEntry": {
+        "recognition": {
+            "type": "Custom",
+            "param": {
+                "custom_recognition": "TaskCompletionGuard",
+                "custom_recognition_param": {
+                    "required": ["__CustomStageEventAttackButton", "CustomStageLimitedActivitySelected", "__CustomStageConfiguredEventSelected"],
+                    "absent": [
+                        "TkfmRecoveryLoginTarget", "TkfmRecoveryReturnTitleTarget", "GameCloseGift",
+                        "GameCloseAnnouncement", "GameCloseEventSignIn", "TkfmRecoveryMonthlyCardTarget"
+                    ]
+                }
+            }
+        },
+        "action": {
+            "type": "Custom",
+            "param": {"custom_action": "ClickRecognitionCenter", "custom_action_param": {}, "target": true}
+        },
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1000},
+        "post_delay": 500,
+        "next": ["CustomStageLimitedListRouter"],
+        "rate_limit": 1000,
+        "max_hit": 3
     },
     "CustomStageOpenEntry": {
         "recognition": {
@@ -575,40 +652,101 @@
         "rate_limit": 1000,
         "max_hit": 3
     },
-    "CustomStageScrollDown": {
+    "CustomStageSearchRightFirst": {
         "recognition": {
             "type": "And",
-            "param": {
-                "all_of": [
-                    "CustomStageListPage"
-                ]
-            }
+            "param": {"all_of": ["CustomStageListPage"]}
         },
         "action": {
             "type": "Swipe",
-            "param": {
-                "begin": [
-                    360,
-                    1000
-                ],
-                "end": [
-                    360,
-                    450
-                ],
-                "duration": 500
-            }
+            "param": {"begin": [545, 640], "end": [175, 640], "duration": 700}
         },
-        "pre_wait_freezes": {
-            "time": 300,
-            "target": true,
-            "timeout": 1000
-        },
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1000},
         "post_delay": 350,
-        "next": [
-            "CustomStageLimitedListRouter"
-        ],
+        "next": ["CustomStageScoreResumeList", "[JumpBack]CommonWaitLoading"],
         "rate_limit": 1000,
-        "max_hit": 6
+        "max_hit": 2,
+        "on_error": ["CustomStageNavigationNotFound"]
+    },
+    "CustomStageSearchDownFirst": {
+        "recognition": {
+            "type": "And",
+            "param": {"all_of": ["CustomStageListPage"]}
+        },
+        "action": {
+            "type": "Swipe",
+            "param": {"begin": [360, 940], "end": [360, 570], "duration": 700}
+        },
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1000},
+        "post_delay": 350,
+        "next": ["CustomStageScoreResumeList", "[JumpBack]CommonWaitLoading"],
+        "rate_limit": 1000,
+        "max_hit": 6,
+        "on_error": ["CustomStageNavigationNotFound"]
+    },
+    "CustomStageSearchLeft": {
+        "recognition": {
+            "type": "And",
+            "param": {"all_of": ["CustomStageListPage"]}
+        },
+        "action": {
+            "type": "Swipe",
+            "param": {"begin": [175, 640], "end": [545, 640], "duration": 700}
+        },
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1000},
+        "post_delay": 350,
+        "next": ["CustomStageScoreResumeList", "[JumpBack]CommonWaitLoading"],
+        "rate_limit": 1000,
+        "max_hit": 2,
+        "on_error": ["CustomStageNavigationNotFound"]
+    },
+    "CustomStageSearchUp": {
+        "recognition": {
+            "type": "And",
+            "param": {"all_of": ["CustomStageListPage"]}
+        },
+        "action": {
+            "type": "Swipe",
+            "param": {"begin": [360, 570], "end": [360, 940], "duration": 700}
+        },
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1000},
+        "post_delay": 350,
+        "next": ["CustomStageScoreResumeList", "[JumpBack]CommonWaitLoading"],
+        "rate_limit": 1000,
+        "max_hit": 6,
+        "on_error": ["CustomStageNavigationNotFound"]
+    },
+    "CustomStageSearchRightAgain": {
+        "recognition": {
+            "type": "And",
+            "param": {"all_of": ["CustomStageListPage"]}
+        },
+        "action": {
+            "type": "Swipe",
+            "param": {"begin": [545, 640], "end": [175, 640], "duration": 700}
+        },
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1000},
+        "post_delay": 350,
+        "next": ["CustomStageScoreResumeList", "[JumpBack]CommonWaitLoading"],
+        "rate_limit": 1000,
+        "max_hit": 2,
+        "on_error": ["CustomStageNavigationNotFound"]
+    },
+    "CustomStageSearchDownAgain": {
+        "recognition": {
+            "type": "And",
+            "param": {"all_of": ["CustomStageListPage"]}
+        },
+        "action": {
+            "type": "Swipe",
+            "param": {"begin": [360, 940], "end": [360, 570], "duration": 700}
+        },
+        "pre_wait_freezes": {"time": 300, "target": true, "timeout": 1000},
+        "post_delay": 350,
+        "next": ["CustomStageScoreResumeList", "[JumpBack]CommonWaitLoading"],
+        "rate_limit": 1000,
+        "max_hit": 6,
+        "on_error": ["CustomStageNavigationNotFound"]
     },
     "CustomStageNavigationNotFound": {
         "next": [
@@ -622,6 +760,7 @@
         "next": [
             "[JumpBack]CommonWaitLoading",
             "CustomStageProgressLocked",
+            "CustomStageSweepDisabledReady",
             "CustomStageDetailReady",
             "CustomStageDirectBattleReady"
         ],
@@ -638,10 +777,39 @@
                 "expected": ["活动进度\\s*需完成.{1,40}后开启"]
             }
         },
-        "next": ["TkfmTaskFailure"],
-        "timeout": 1,
+        "next": ["CustomStageSelectionFailure"],
         "focus": {
             "Node.Recognition.Succeeded": "自定义关卡：目标尚未解锁。请按游戏提示完成前置关卡，或在任务设置中选用已解锁的关卡。"
+        }
+    },
+    "__CustomStageSweepDisabledFill": {
+        "recognition": {
+            "type": "ColorMatch",
+            "param": {
+                "roi": [520, 1129, 107, 6],
+                "method": 4,
+                "lower": [145, 140, 135],
+                "upper": [185, 180, 180],
+                "count": 480,
+                "connected": true
+            }
+        }
+    },
+    "CustomStageSweepDisabledReady": {
+        "recognition": {
+            "type": "And",
+            "param": {
+                "all_of": [
+                    "__DailyStaminaSweepButton",
+                    "__CustomStageSweepDisabledFill",
+                    "__DailyStaminaTrainingStartButton"
+                ],
+                "box_index": 2
+            }
+        },
+        "next": ["CustomStageDirectBattle"],
+        "focus": {
+            "Node.Recognition.Succeeded": "军团扫荡不可用，本关改用普通战斗。"
         }
     },
     "CustomStageDetailReady": {
@@ -666,12 +834,18 @@
         }
     },
     "CustomStageStageNotFound": {
-        "next": [
-            "TkfmTaskFailure"
-        ],
+        "recognition": {
+            "type": "And",
+            "param": {"all_of": ["CustomStageListPage"]}
+        },
+        "next": ["CustomStageSelectionFailure"],
         "focus": {
-            "Node.Recognition.Succeeded": "自定义关卡：关卡未找到、列表页面不匹配或已向下寻找6屏；请检查截图和活动路线"
+            "Node.Recognition.Succeeded": "自定义关卡：已完成六段顺时针搜索，未找到可选中的截图目标。"
         }
+    },
+    "CustomStageSelectionFailure": {
+        "next": ["TkfmTaskFailure"],
+        "timeout": 1
     },
     "CustomStageDetailNotFound": {
         "next": [
@@ -723,10 +897,10 @@
             "[JumpBack]CommonWaitLoading",
             "CustomStageOpenExpedition",
             "CustomStageScoreBefore",
-            "CustomStageOpenTarget",
+            "CustomStageScoreResumeList",
+            "CustomStageAttackEntry",
             "CustomStageOpenEntry",
-            "CustomStageOpenLimitedActivities",
-            "CustomStageScrollDown"
+            "CustomStageOpenLimitedActivities"
         ],
         "timeout": 30000,
         "rate_limit": 1000,
@@ -747,6 +921,16 @@
                     60
                 ],
                 "threshold": 0.85
+            }
+        }
+    },
+    "__CustomStageEventExchange": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "template": "CustomStage/EventExchange720.png",
+                "roi": [594, 170, 118, 56],
+                "threshold": 0.9
             }
         }
     },
