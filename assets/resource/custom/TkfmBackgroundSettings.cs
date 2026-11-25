@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -45,6 +47,28 @@ internal sealed class TkfmBackgroundService : IDisposable
     private const string StartupHandledKey = "TKFMaa.BackgroundSettings.StartupHandled";
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const uint WindowClose = 0x0010;
+    private const string RestartScript = @"
+$ErrorActionPreference = 'Stop'
+$previous = Get-Process -Id $env:TKFM_RESTART_PID -ErrorAction SilentlyContinue
+if ($previous) {
+    try {
+        if ($previous.StartTime.ToUniversalTime().Ticks -eq [long]$env:TKFM_RESTART_STARTED) {
+            $previous.WaitForExit()
+        }
+    } catch [System.InvalidOperationException] {
+        # The old process exited before its handle could be opened.
+    } finally {
+        $previous.Dispose()
+    }
+}
+$start = New-Object System.Diagnostics.ProcessStartInfo
+$start.FileName = $env:TKFM_RESTART_EXECUTABLE
+$start.WorkingDirectory = [IO.Path]::GetDirectoryName($start.FileName)
+$start.UseShellExecute = $false
+Remove-Item Env:TKFM_RESTART_PID, Env:TKFM_RESTART_STARTED, Env:TKFM_RESTART_EXECUTABLE
+$replacement = [Diagnostics.Process]::Start($start)
+$replacement.Dispose()
+";
     private readonly DispatcherTimer timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
     private readonly Dictionary<StackPanel, StackPanel> settings = new Dictionary<StackPanel, StackPanel>();
     private readonly EventWaitHandle exitRequest = new EventWaitHandle(false, EventResetMode.AutoReset,
@@ -54,6 +78,9 @@ internal sealed class TkfmBackgroundService : IDisposable
     private readonly string executable = Path.GetFullPath(Environment.ProcessPath
         ?? throw new InvalidOperationException("找不到助手程序路径"));
     private RootView? window;
+    private NativeMenu? trayMenu;
+    private NativeMenuItem? restartItem;
+    private bool restartRequested;
     private bool disposed;
 
     internal TkfmBackgroundService()
@@ -106,7 +133,7 @@ internal sealed class TkfmBackgroundService : IDisposable
 
     private void Refresh(object? sender, EventArgs args)
     {
-        if (disposed) return;
+        if (disposed || restartRequested) return;
         if (window == null)
         {
             if (!(Instances.TopLevel is RootView root) || !root.IsLoaded) return;
@@ -114,6 +141,8 @@ internal sealed class TkfmBackgroundService : IDisposable
             window = root;
             window.Closed += WindowClosed;
         }
+
+        RefreshTrayMenu();
 
         if (CanHide() && AppDomain.CurrentDomain.GetData(StartupHandledKey) == null
             && Environment.GetCommandLineArgs().Contains(StartInTrayArgument, StringComparer.OrdinalIgnoreCase))
@@ -136,6 +165,72 @@ internal sealed class TkfmBackgroundService : IDisposable
             HideMinimizeToTrayCard(host);
             if (!settings.ContainsKey(host)) InstallSettings(host);
         }
+    }
+
+    private void RefreshTrayMenu()
+    {
+        var menu = Application.Current is { } app ? TrayIcon.GetIcons(app)?.FirstOrDefault()?.Menu : null;
+        if (ReferenceEquals(trayMenu, menu)) return;
+        RemoveRestartItem();
+        if (menu == null) return;
+
+        var item = new NativeMenuItem { Header = "重启" };
+        item.Click += RestartFromTray;
+        // MFAAvalonia places its Quit command last in the native tray menu.
+        menu.Items.Insert(Math.Max(0, menu.Items.Count - 1), item);
+        trayMenu = menu;
+        restartItem = item;
+    }
+
+    private void RemoveRestartItem()
+    {
+        if (restartItem == null) return;
+        restartItem.Click -= RestartFromTray;
+        trayMenu?.Items.Remove(restartItem);
+        restartItem = null;
+        trayMenu = null;
+    }
+
+    private void RestartFromTray(object? sender, EventArgs args)
+    {
+        if (disposed || restartRequested || window == null) return;
+        restartRequested = true;
+
+        try
+        {
+            // Keep the development environment and wait for the old process to
+            // release its runtime and configuration before reopening the frontend.
+            using var current = Process.GetCurrentProcess();
+            var launcher = new ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
+                WorkingDirectory = Path.GetDirectoryName(executable)!,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+            launcher.ArgumentList.Add("-NoProfile");
+            launcher.ArgumentList.Add("-NonInteractive");
+            launcher.ArgumentList.Add("-EncodedCommand");
+            launcher.ArgumentList.Add(Convert.ToBase64String(Encoding.Unicode.GetBytes(RestartScript)));
+            launcher.Environment["TKFM_RESTART_PID"] = current.Id.ToString(CultureInfo.InvariantCulture);
+            launcher.Environment["TKFM_RESTART_STARTED"] = current.StartTime.ToUniversalTime().Ticks
+                .ToString(CultureInfo.InvariantCulture);
+            launcher.Environment["TKFM_RESTART_EXECUTABLE"] = executable;
+            using var handoff = Process.Start(launcher) ?? throw new InvalidOperationException("无法启动重启进程");
+        }
+        catch (Exception ex)
+        {
+            restartRequested = false;
+            LoggerHelper.Error($"托盘重启失败：{ex.Message}", ex);
+            Instances.RootViewModel.IsWindowVisible = true;
+            ToastHelper.Error("重启失败", ex.Message);
+            return;
+        }
+
+        // A paused callback or a stuck task must not keep the old process alive.
+        Instances.EnsureShutdownWatchdogStarted();
+        window.ShutdownAfterConfirmedExit();
     }
 
     private static bool CanExitForDevReload()
@@ -216,6 +311,7 @@ internal sealed class TkfmBackgroundService : IDisposable
         disposed = true;
         timer.Stop();
         timer.Tick -= Refresh;
+        RemoveRestartItem();
         ConfigurationManager.ConfigurationSwitched -= EnforceTaskbarMinimize;
         titleBarClick.Dispose();
         exitRequest.Dispose();
