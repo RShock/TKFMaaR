@@ -283,6 +283,7 @@ internal sealed class DispatchClock : IDisposable
     private readonly Dictionary<ToggleSwitch, EventHandler<RoutedEventArgs>> dispatchToggles = new();
     private readonly Dictionary<Grid, (DockPanel Host, TextBlock Title, Border Clock)> dispatchClocks = new();
     private readonly HashSet<Button> dispatchCancelButtons = new();
+    private readonly Dictionary<StackPanel, TextBlock> dispatchSettingsTimes = new();
     private readonly Dictionary<ComboBox, (string Text, IDisposable Placeholder, IDisposable Tip)> controllerLabels = new();
     private const string DispatchTimePrefix = "下次派遣时间：";
     private static readonly Regex DispatchStatusLine = new Regex($"(?m)^{DispatchTimePrefix}[^\r\n]*");
@@ -714,6 +715,7 @@ internal sealed class DispatchClock : IDisposable
         var shownClocks = new HashSet<Grid>();
         var shownButtons = new HashSet<Button>();
         var shownToggles = new HashSet<ToggleSwitch>();
+        var shownSettings = new HashSet<StackPanel>();
         foreach (var view in views)
         {
             if (view.DataContext is not TaskQueueViewModel vm) continue;
@@ -721,6 +723,7 @@ internal sealed class DispatchClock : IDisposable
             var task = DispatchTask(processor);
             bool enabled = AutoDispatchEnabled(processor);
             if (task == null) continue;
+            string nextDispatch = NextDispatchText(processor);
 
             if (enabled)
             {
@@ -728,7 +731,7 @@ internal sealed class DispatchClock : IDisposable
                     .Where(grid => grid.Name == "ListGrid" && ReferenceEquals(grid.DataContext, task)).ToArray())
                 {
                     var titleGrid = row.Children.OfType<Grid>().FirstOrDefault(grid => Grid.GetColumn(grid) == 1);
-                    if (titleGrid != null && ShowDispatchClock(titleGrid, NextDispatchText(processor)))
+                    if (titleGrid != null && ShowDispatchClock(titleGrid, nextDispatch))
                         shownClocks.Add(titleGrid);
                 }
             }
@@ -736,8 +739,10 @@ internal sealed class DispatchClock : IDisposable
             var options = view.FindControl<StackPanel>("CommonOptionSettings");
             var toggle = task.EnableSetting ? options?.GetVisualDescendants().OfType<ToggleSwitch>()
                 .FirstOrDefault(item => item.Tag as string == Dispatch) : null;
-            if (toggle != null)
+            if (options != null && toggle != null)
             {
+                shownSettings.Add(options);
+                ShowDispatchSettingsTime(options, nextDispatch);
                 shownToggles.Add(toggle);
                 if (!dispatchToggles.ContainsKey(toggle))
                 {
@@ -779,8 +784,26 @@ internal sealed class DispatchClock : IDisposable
             HideDispatchClock(grid);
         foreach (var button in dispatchCancelButtons.Where(button => !shownButtons.Contains(button)).ToArray())
             RemoveDispatchCancelButton(button);
+        foreach (var options in dispatchSettingsTimes.Keys.Where(options => !shownSettings.Contains(options)).ToArray())
+            RemoveDispatchSettingsTime(options);
         foreach (var toggle in dispatchToggles.Keys.Where(toggle => !shownToggles.Contains(toggle)).ToArray())
             UnbindDispatchToggle(toggle);
+    }
+
+    private void ShowDispatchSettingsTime(StackPanel options, string nextDispatch)
+    {
+        if (!dispatchSettingsTimes.TryGetValue(options, out var label))
+        {
+            label = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 4, 0, 6) };
+            dispatchSettingsTimes.Add(options, label);
+        }
+        if (label.Text != nextDispatch) label.Text = nextDispatch;
+        if (!options.Children.Contains(label)) options.Children.Insert(0, label);
+    }
+
+    private void RemoveDispatchSettingsTime(StackPanel options)
+    {
+        if (dispatchSettingsTimes.Remove(options, out var label)) options.Children.Remove(label);
     }
 
     private void CancelAutomaticDispatch(MaaProcessor processor)
@@ -1162,6 +1185,7 @@ internal sealed class DispatchClock : IDisposable
             foreach (var toggle in dispatchToggles.Keys.ToArray()) UnbindDispatchToggle(toggle);
             foreach (var grid in dispatchClocks.Keys.ToArray()) HideDispatchClock(grid);
             foreach (var button in dispatchCancelButtons.ToArray()) RemoveDispatchCancelButton(button);
+            foreach (var options in dispatchSettingsTimes.Keys.ToArray()) RemoveDispatchSettingsTime(options);
             foreach (var box in controllerLabels.Keys.ToArray()) RestoreControllerLabel(box);
         });
     }
