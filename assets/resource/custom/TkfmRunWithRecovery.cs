@@ -589,8 +589,10 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
     {
         try
         {
-            OpenGame(processor, "[启动游戏]", processor.CancellationTokenSource?.Token ?? CancellationToken.None);
-            return true;
+            bool alreadyForeground = OpenGame(processor, "[启动游戏]",
+                processor.CancellationTokenSource?.Token ?? CancellationToken.None);
+            if (alreadyForeground && !Cancelled(context, processor)) TryStartupRecovery(context);
+            return !Cancelled(context, processor);
         }
         catch (Exception ex)
         {
@@ -599,13 +601,70 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
         }
     }
 
+    private static void TryStartupRecovery(IMaaContext context)
+    {
+        // Reuse the positive recovery recognizers and actions in a child pipeline.
+        // A miss ends the probe quietly, leaving the caller to run normal login.
+        string[] steps = {
+            "TkfmRecoveryReturnTitle", "TkfmRecoveryAdvertisement", "TkfmRecoveryAnnouncement",
+            "TkfmRecoveryEventSignIn", "TkfmRecoverySignIn", "TkfmRecoveryReturnMap",
+            "TkfmRecoveryBackButton", "GameLoginCastleFallback"
+        };
+        var next = new JArray("TkfmRecoveryReturnHomeConfirmed");
+        var overrides = new JObject
+        {
+            ["TkfmRecoveryReturnHome"] = new JObject
+            {
+                ["next"] = next, ["on_error"] = new JArray(), ["timeout"] = 1500, ["rate_limit"] = 350
+            },
+            ["TkfmRecoveryReturnHomeConfirmed"] = new JObject
+            {
+                ["recognition"] = new JObject
+                {
+                    ["type"] = "And", ["param"] = new JObject { ["all_of"] = new JArray("GameMainReady") }
+                }
+            }
+        };
+        foreach (var step in steps)
+        {
+            next.Add("[JumpBack]" + step);
+            overrides[step] = new JObject
+            {
+                ["next"] = new JArray(), ["on_error"] = new JArray(), ["focus"] = JValue.CreateNull(),
+                ["max_hit"] = step == "TkfmRecoveryBackButton" ? 3 : step == "TkfmRecoverySignIn" ? 1 : 2
+            };
+        }
+        // Each recognized return button can lead to another page with a return button.
+        // Scope its quota separately from transient popups in this startup probe.
+        overrides["TkfmRecoveryBackButton"]["recognition"] = new JObject
+        {
+            ["type"] = "Custom",
+            ["param"] = new JObject
+            {
+                ["custom_recognition"] = "TaskCompletionGuard",
+                ["custom_recognition_param"] = new JObject
+                {
+                    ["required"] = new JArray("TkfmRecoveryBackButtonTarget"),
+                    ["absent"] = new JArray("CommonWaitLoading", "TkfmRecoveryLoginTarget", "TkfmRecoveryReturnTitleTarget",
+                        "TkfmRecoveryExitGameTarget", "GameCloseGift", "GameCloseAnnouncement", "GameCloseEventSignIn",
+                        "TkfmRecoveryMonthlyCardTarget")
+                }
+            }
+        };
+        // Missing a candidate is expected. End normally so the timeout diagnostics
+        // cannot display a recognition-failure message for the optional probe.
+        next.Add("GameLoginStartupProbeDone");
+        try { context.RunTask("TkfmRecoveryReturnHome", overrides.ToString(Formatting.None)); }
+        catch (Exception) { /* The ordinary login dispatcher rechecks the current page. */ }
+    }
+
     private static void RequireAdb(string adb, string serial)
     {
         if (string.IsNullOrWhiteSpace(serial) || !File.Exists(adb))
             throw new InvalidOperationException("当前配置缺少有效的 ADB 程序或设备地址，请先选择对应设备");
     }
 
-    private static void OpenGame(MaaProcessor processor, string label, CancellationToken cancellation)
+    private static bool OpenGame(MaaProcessor processor, string label, CancellationToken cancellation)
     {
         var device = processor.Config.AdbDevice;
         string adb = device.AdbPath, serial = device.AdbSerial;
@@ -616,7 +675,8 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             @"(?m)^\s*(?:topResumedActivity|mResumedActivity)\b[^\r\n]*?\s" + Regex.Escape(package) + "/");
 
         processor.AddLog(label + " 第2步：检查并打开游戏 " + package + "。", changeColor: false);
-        if (!InForeground())
+        bool alreadyForeground = InForeground();
+        if (!alreadyForeground)
         {
             string resolved = Shell("cmd", "package", "resolve-activity", "--brief", "-a", "android.intent.action.MAIN",
                 "-c", "android.intent.category.LAUNCHER", package);
@@ -635,6 +695,7 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             }
         }
         processor.AddLog(label + " 第2步完成：" + package + " 已在前台。", changeColor: false);
+        return alreadyForeground;
     }
 
     private static string GamePackage(MaaProcessor processor)

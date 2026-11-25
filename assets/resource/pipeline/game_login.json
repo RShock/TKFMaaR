@@ -15,9 +15,11 @@
                 }
             }
         },
-        "next": [
-            "GameLoginDispatch"
-        ]
+        "next": ["GameMainReady", "GameLoginDispatch"]
+    },
+    "GameLoginStartupProbeDone": {
+        "recognition": {"type": "DirectHit"},
+        "action": {"type": "DoNothing"}
     },
     "GameLoginLaunch": {
         "recognition": {
@@ -58,7 +60,9 @@
             "[JumpBack]GameTapTitleScreen",
             "[JumpBack]CommonReturnMainFromStaminaStageList",
             "GameMainReady",
-            "[JumpBack]GameLoginWaitTapScreen"
+            "[JumpBack]GameLoginWaitTapScreen",
+            "GameLoginBackFallback",
+            "GameLoginCastleFallback"
         ],
         "on_error": [
             "GameLoginStopAfterTimeout"
