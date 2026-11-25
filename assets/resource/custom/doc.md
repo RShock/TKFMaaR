@@ -3,7 +3,8 @@
 ## 每日政务与体力入口
 
 - `TkfmRunWithRecovery` 支持可选 `initialize` 节点，在首次业务尝试前仅执行一次；游戏重启与局部恢复不重新初始化，保留每日政务预占次数及待确认提交。
-- `TkfmCustomStage` 只覆盖 `DailyStaminaBattleStartAttempt` 和原关卡路由；共同入口 `DailyStaminaStartAttempt` 先完成三项政务，不能被自定义配置绕过。
+- `DailyAffairsInitialize` 额外接收当前实例 ID、配置目录和日志目录，供 Agent 按实例读取、补录和保存三项扫荡日期。
+- `TkfmCustomStage` 只覆盖 `DailyStaminaBattleStartAttempt` 和原关卡路由。共同入口 `DailyStaminaStartAttempt` 先处理已开启且到期的政务。
 - 空闲迁移只补战争演习、情报搜集、商业经营三个缺失的默认开启选项，保留已有明确值；开发迁移脚本行为一致。新建队列读取三个开关，运行中修改下次队列生效。
 
 ## 启动游戏与模拟器

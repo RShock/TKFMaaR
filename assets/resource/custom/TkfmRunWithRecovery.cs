@@ -97,7 +97,7 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
             // In particular, daily ticket reservations survive a game restart.
             string initialize = (string)param["initialize"];
             if (!string.IsNullOrWhiteSpace(initialize)
-                && !RunOnce(context, processor, initialize))
+                && !RunOnce(context, processor, initialize, InitializationOverride(processor, initialize)))
                 throw new InvalidOperationException("无法初始化任务账目：" + initialize);
             string? nonRetryableHit = (string?)param["non_retryable_hit"];
             ulong previousNonRetryableHits = 0;
@@ -264,6 +264,29 @@ public sealed class TkfmRunWithRecovery : IMaaCustomAction
         context.GetHitCount("TkfmRecoveryWebPageUnavailable", out var errors);
         context.GetHitCount("TkfmRecoveryWebPageUnavailablePriority", out var priority);
         return errors + priority;
+    }
+
+    private static string InitializationOverride(MaaProcessor processor, string entry)
+    {
+        if (entry != "DailyAffairsInitialize") return "{}";
+        return new JObject
+        {
+            [entry] = new JObject
+            {
+                ["action"] = new JObject
+                {
+                    ["param"] = new JObject
+                    {
+                        ["custom_action_param"] = new JObject
+                        {
+                            ["instance_id"] = processor.InstanceId,
+                            ["config_dir"] = AppPaths.ConfigDirectory,
+                            ["logs_dir"] = AppPaths.LogsDirectory
+                        }
+                    }
+                }
+            }
+        }.ToString(Formatting.None);
     }
 
     private static bool RunOnce(IMaaContext context, MaaProcessor processor, string entry, string overrides = "{}")

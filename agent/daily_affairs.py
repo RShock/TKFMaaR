@@ -5,9 +5,14 @@ the resource ledger shared by recovery attempts on the same controller.
 """
 
 import hashlib
+import json
+import os
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import date, timedelta
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from bootstrap import configure_runtime
 
@@ -18,18 +23,24 @@ from maa.custom_action import CustomAction
 from maa.custom_recognition import CustomRecognition
 from maa.pipeline import JActionType, JClick, JOCR, JSwipe
 
-from common import param_mode
+from common import param_mode, safe_json_loads
 
 
 KINDS = ("War", "Intel", "Commerce")
 LABELS = {"War": "战争演习-特IV", "Intel": "情报搜集-高", "Commerce": "商业贸易-特IV"}
 PREFIX = "__DailyAffairs"
 PAGE_BOX = (0, 0, 720, 1280)
+SWEEP_INTERVAL = timedelta(days=3)
+CONFIRMED = "已确认门票按预期扣除，扫荡完成"
+CONFIRMED_LINES = {f"[每日政务] {label}：{CONFIRMED}。": kind for kind, label in LABELS.items()}
+LOG_ENTRY = re.compile(r"^\[(?P<day>\d{4}-\d{2}-\d{2}) [^\]]+\]\[INF\] ")
 
 
 @dataclass
 class AffairsSession:
     selected: tuple[str, ...]
+    history_path: Path | None = None
+    last_sweeps: dict[str, date] = field(default_factory=dict)
     done: dict[str, str] = field(default_factory=dict)
     reserved: dict[str, int] = field(default_factory=dict)
     pending: dict | None = None
@@ -49,6 +60,58 @@ _SESSIONS: dict[str, AffairsSession] = {}
 
 def _session(context):
     return _SESSIONS[context.tasker.controller.uuid]
+
+
+def _write_sweep_history(path: Path, last_sweeps: dict[str, date]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+            temp_path = Path(stream.name)
+            json.dump({kind: day.isoformat() for kind, day in last_sweeps.items()}, stream)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def _read_sweep_history(path: Path, logs_dir: Path, instance_id: str, today: date) -> dict[str, date]:
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        stored = {}
+    if not isinstance(stored, dict):
+        raise ValueError("扫荡日期记录格式无效")
+    last_sweeps = {kind: date.fromisoformat(stored[kind]) for kind in KINDS if kind in stored}
+    previous = last_sweeps.copy()
+
+    # Older releases confirmed consumption in the frontend log. Only recent
+    # dates can affect the interval, including size-rotated files for those days.
+    for days_ago in range(SWEEP_INTERVAL.days):
+        day = today - timedelta(days=days_ago)
+        prefix = f"log-{day:%Y%m%d}"
+        for log in logs_dir.glob(f"{prefix}*.log"):
+            with log.open(encoding="utf-8-sig", errors="replace") as stream:
+                for line in stream:
+                    if CONFIRMED not in line:
+                        continue
+                    match = LOG_ENTRY.match(line)
+                    if match is None or match["day"] != day.isoformat():
+                        continue
+                    tags, _, message = line[match.end():].rstrip().partition("] [每日政务] ")
+                    kind = CONFIRMED_LINES.get("[每日政务] " + message)
+                    if kind is None or last_sweeps.get(kind, date.min) >= day:
+                        continue
+                    tags = dict(re.findall(r"\[([^=\[\]]+)=([^\]]*)", tags))
+                    instance = tags.get("inst", "")
+                    if tags.get("src") == "Agent" and (instance == instance_id or instance.endswith("/" + instance_id)):
+                        last_sweeps[kind] = day
+    if last_sweeps != previous:
+        _write_sweep_history(path, last_sweeps)
+    return last_sweeps
 
 
 def _find(context, image, name, roi=None):
@@ -309,9 +372,40 @@ class DailyAffairsInitialize(CustomAction):
             kind for kind in KINDS
             if (context.get_node_data("DailyAffairs" + kind + "Config") or {}).get("attach", {}).get("selected", True) is True
         )
-        _SESSIONS[context.tasker.controller.uuid] = AffairsSession(selected=selected, handed_off=not selected)
-        names = "、".join(LABELS[kind] for kind in selected) or "全部关闭"
-        print(f"[每日政务] 本轮选择：{names}；每项最多3次，只扫荡，不购买或恢复资源。", flush=True)
+        session = AffairsSession(selected=selected, handed_off=not selected)
+        _SESSIONS[context.tasker.controller.uuid] = session
+        if not selected:
+            print("[每日政务] 三项扫荡均已关闭。", flush=True)
+            return True
+
+        raw = argv.custom_action_param
+        params = safe_json_loads(raw, {}) if isinstance(raw, str) else raw
+        today = date.today()
+        try:
+            if not isinstance(params, dict) or not all(params.get(key) for key in ("instance_id", "config_dir", "logs_dir")):
+                raise ValueError("缺少当前实例的扫荡记录位置")
+            instance_id = params["instance_id"]
+            key = hashlib.sha256(instance_id.encode("utf-8")).hexdigest()
+            session.history_path = Path(params["config_dir"]) / "daily-affairs" / f"{key}.json"
+            session.last_sweeps = _read_sweep_history(session.history_path, Path(params["logs_dir"]), instance_id, today)
+        except (OSError, TypeError, ValueError) as error:
+            session.handed_off = True
+            print(f"[每日政务] 无法读取扫荡日期记录，本轮跳过三个前置扫荡。{error}", flush=True)
+            return True
+
+        eligible = []
+        for kind in selected:
+            last = session.last_sweeps.get(kind)
+            if last is not None and today - last < SWEEP_INTERVAL:
+                due = last + SWEEP_INTERVAL
+                print(f"[每日政务] {LABELS[kind]}上次耗券日期为 {last:%Y-%m-%d}，最早 {due:%Y-%m-%d} 再扫荡。", flush=True)
+            else:
+                eligible.append(kind)
+        session.selected = tuple(eligible)
+        session.handed_off = not eligible
+        if eligible:
+            names = "、".join(LABELS[kind] for kind in eligible)
+            print(f"[每日政务] 本轮可扫荡：{names}。每项最多3次。", flush=True)
         return True
 
 
@@ -358,7 +452,13 @@ class DailyAffairsAction(CustomAction):
                 print("[每日政务] 前置流程结束，已回主页，继续原配置的体力关卡。", flush=True)
                 return True
             if mode in {"settled", "skip"}:
-                reason = detail.get("reason", "已确认门票按预期扣除，扫荡完成")
+                reason = detail.get("reason", CONFIRMED)
+                if mode == "settled":
+                    session.last_sweeps[kind] = date.today()
+                    try:
+                        _write_sweep_history(session.history_path, session.last_sweeps)
+                    except OSError as error:
+                        print(f"[每日政务] {LABELS[kind]}的扫荡日期未能写入。{error}", flush=True)
                 session.done[kind] = reason
                 print(f"[每日政务] {LABELS[kind]}：{reason}。", flush=True)
                 session.pending = None
