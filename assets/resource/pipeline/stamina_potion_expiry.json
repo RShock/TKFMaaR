@@ -1,0 +1,42 @@
+{
+    "__TkfmStaminaPotionExpiryRedBanner": {
+        "recognition": {
+            "type": "ColorMatch",
+            "param": {
+                "roi": [
+                    626,
+                    1164,
+                    12,
+                    8
+                ],
+                "method": 4,
+                "lower": [
+                    170,
+                    12,
+                    52
+                ],
+                "upper": [
+                    255,
+                    78,
+                    125
+                ],
+                "count": 58
+            }
+        }
+    },
+    "__TkfmStaminaPotionExpiryHourGlyph": {
+        "recognition": {
+            "type": "TemplateMatch",
+            "param": {
+                "roi": [
+                    585,
+                    1159,
+                    45,
+                    16
+                ],
+                "template": "Common/StaminaPotionExpiryHour720.png",
+                "threshold": 0.82
+            }
+        }
+    }
+}
