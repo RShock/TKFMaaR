@@ -5,6 +5,8 @@ using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
@@ -75,6 +77,8 @@ internal sealed class TkfmDailyCompletionService : IDisposable
         (AppDomain.CurrentDomain.GetData("TKFMaa.TaskListGuard.IsBusy") as Func<bool>)?.Invoke() == true;
 
     private const string GuildRewardTask = "领取协会奖励";
+    private const string CanContinueKey = "TKFMaa.DailyCompletion.CanContinue";
+    private const string ContinueKey = "TKFMaa.DailyCompletion.Continue";
     private const string Setting = "TkfmTaskRunHistoryV2";
     private const string LegacySetting = "TkfmDailyCompletionV1";
     private readonly DispatcherTimer timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
@@ -89,6 +93,8 @@ internal sealed class TkfmDailyCompletionService : IDisposable
 
     internal TkfmDailyCompletionService()
     {
+        AppDomain.CurrentDomain.SetData(CanContinueKey, (Func<MaaProcessor, bool>)(processor => RemainingForToday(processor).Count > 0));
+        AppDomain.CurrentDomain.SetData(ContinueKey, (Action<MaaProcessor>)ContinueToday);
         timer.Tick += Refresh;
         timer.Start();
         Refresh(null, EventArgs.Empty);
@@ -98,6 +104,68 @@ internal sealed class TkfmDailyCompletionService : IDisposable
     private static string? TaskKey(DragItemViewModel task) => task.IsResourceOptionItem
         ? null
         : task.InterfaceItem?.Name;
+
+    private static string? HistoryKey(TaskQueueViewModel vm, DragItemViewModel task)
+    {
+        if (TaskKey(task) is not { Length: > 0 } name) return null;
+        var sameName = vm.TaskItemViewModels.Where(item => TaskKey(item) == name).ToArray();
+        if (sameName.Length < 2) return name;
+
+        // Different configured copies of one Interface task must not share a completion.
+        var signature = TaskSignature(task);
+        int occurrence = sameName.TakeWhile(item => !ReferenceEquals(item, task))
+            .Count(item => TaskSignature(item) == signature);
+        return name + "\n" + signature + ":" + occurrence.ToString(CultureInfo.InvariantCulture);
+    }
+
+    private static string TaskSignature(DragItemViewModel task)
+    {
+        var item = task.InterfaceItem!;
+        var serialized = JsonConvert.SerializeObject(new { item.DisplayNameOverride, item.Option });
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(serialized)));
+    }
+
+    private List<DragItemViewModel> RemainingForToday(MaaProcessor processor)
+    {
+        var pending = new List<DragItemViewModel>();
+        if (TaskListBusy() || processor.ViewModel is not { } vm || processor.IsClosed || processor.IsConnecting
+            || processor.IsTaskRunActive || processor.TaskQueue.Count != 0 || processor.MaaTasker?.IsRunning == true
+            || vm.IsRunning || !vm.ToggleEnable) return pending;
+
+        var today = DateTime.Today;
+        var controller = vm.GetCurrentControllerName();
+        var history = RecordFor(processor);
+        bool hasCompleted = false;
+        foreach (var item in vm.TaskItemViewModels)
+        {
+            if ((!item.IsChecked && item.IsCheckedWithNull.HasValue) || !item.SupportsResource(vm.CurrentResource)
+                || !item.SupportsController(controller) || HistoryKey(vm, item) is not { } key) continue;
+            if (TaskKey(item) == GuildRewardTask && today.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday)
+                && item.InterfaceItem?.Option?.FirstOrDefault(option => option.Name == "仅在周六周日开启")?.Index != 1)
+                continue;
+
+            var record = history[key] as JObject;
+            if (record != null && ReadSuccessTime(record)?.ToLocalTime().Date == today)
+                hasCompleted = true;
+            else
+                pending.Add(item);
+        }
+        if (!hasCompleted) pending.Clear();
+        return pending;
+    }
+
+    private void ContinueToday(MaaProcessor processor)
+    {
+        try
+        {
+            // Re-evaluate at click time because the selection, day, or queue may have changed.
+            var pending = RemainingForToday(processor);
+            if (pending.Count == 0) return;
+            processor.AddLog($"[继续任务] 按当前顺序执行今天剩余的 {pending.Count} 项任务。", changeColor: false);
+            processor.Start(pending);
+        }
+        catch (Exception ex) { processor.AddLog("[继续任务] " + ex.Message, "OrangeRed"); }
+    }
 
     private JObject RecordFor(MaaProcessor processor)
     {
@@ -157,10 +225,13 @@ internal sealed class TkfmDailyCompletionService : IDisposable
         ["at"] = at?.ToString("O", CultureInfo.InvariantCulture),
     };
 
-    private static DateTimeOffset? ReadTime(JObject record) => record["at"]?.Type == JTokenType.String
-        && DateTimeOffset.TryParse((string?)record["at"], CultureInfo.InvariantCulture, DateTimeStyles.None, out var at)
+    private static DateTimeOffset? ReadTime(JObject record, string field = "at") => record[field]?.Type == JTokenType.String
+        && DateTimeOffset.TryParse((string?)record[field], CultureInfo.InvariantCulture, DateTimeStyles.None, out var at)
         ? at
         : null;
+
+    private static DateTimeOffset? ReadSuccessTime(JObject record) => ReadTime(record, "succeeded_at")
+        ?? ((string?)record["state"] == nameof(TaskRunState.Succeeded) ? ReadTime(record) : null);
 
     private void OnTaskChanged(object? sender, PropertyChangedEventArgs args)
     {
@@ -181,7 +252,8 @@ internal sealed class TkfmDailyCompletionService : IDisposable
         // Queued and Skipped describe the queue, not an actual attempt at this task.
         if (state is not (TaskRunState.Running or TaskRunState.Succeeded or TaskRunState.Failed or TaskRunState.Stopped))
             return;
-        SaveRun(processor, key, state);
+        if (processor.ViewModel is { } vm && HistoryKey(vm, task) is { } historyKey)
+            SaveRun(processor, historyKey, state);
     }
 
     internal void RecordGuildRewardDecision(MaaProcessor processor, bool skip)
@@ -195,7 +267,8 @@ internal sealed class TkfmDailyCompletionService : IDisposable
         else
         {
             guildRewardSkips.Remove(task);
-            SaveRun(processor, GuildRewardTask, TaskRunState.Running);
+            if (processor.ViewModel is { } vm && HistoryKey(vm, task) is { } key)
+                SaveRun(processor, key, TaskRunState.Running);
         }
     }
 
@@ -204,7 +277,13 @@ internal sealed class TkfmDailyCompletionService : IDisposable
         try
         {
             var record = RecordFor(processor);
-            record[key] = MakeRecord(state, DateTimeOffset.Now);
+            var now = DateTimeOffset.Now;
+            var entry = MakeRecord(state, now);
+            var succeededAt = state == TaskRunState.Succeeded ? now
+                : record[key] is JObject previous ? ReadSuccessTime(previous) : null;
+            if (succeededAt is { } success && success.ToLocalTime().Date == now.Date)
+                entry["succeeded_at"] = success.ToString("O", CultureInfo.InvariantCulture);
+            record[key] = entry;
             processor.InstanceConfiguration.SetValue(Setting, record.ToString(Formatting.None));
         }
         catch (Exception ex) { Report(ex); }
@@ -282,7 +361,7 @@ internal sealed class TkfmDailyCompletionService : IDisposable
                     {
                         if (row.DataContext is not DragItemViewModel task) continue;
                         var title = row.Children.OfType<Grid>().FirstOrDefault(grid => Grid.GetColumn(grid) == 1);
-                        var lastRun = TaskKey(task) is { } key ? record[key] as JObject : null;
+                        var lastRun = HistoryKey(vm, task) is { } key ? record[key] as JObject : null;
                         bool taskFailurePaused = failurePaused && task.RunState == TaskRunState.Running;
                         var text = RowStatus(task.RunState, taskFailurePaused, lastRun);
                         var hasBadge = title != null && text != null;
@@ -403,6 +482,8 @@ internal sealed class TkfmDailyCompletionService : IDisposable
 
     public void Dispose()
     {
+        AppDomain.CurrentDomain.SetData(CanContinueKey, null);
+        AppDomain.CurrentDomain.SetData(ContinueKey, null);
         timer.Stop();
         timer.Tick -= Refresh;
         foreach (var collection in collections.Keys) collection.CollectionChanged -= OnCollectionChanged;

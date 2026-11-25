@@ -39,6 +39,7 @@ public sealed class TkfmTaskPause : IMaaCustomAction
 internal sealed class TkfmTaskPauseService : IDisposable
 {
     private const string FailurePauseQueryKey = "TKFMaa.TaskPause.IsFailurePaused";
+    private const string ContinueButtonName = "TkfmContinueDailyTasksButton";
     private static bool TaskListBusy() =>
         (AppDomain.CurrentDomain.GetData("TKFMaa.TaskListGuard.IsBusy") as Func<bool>)?.Invoke() == true;
 
@@ -89,10 +90,27 @@ internal sealed class TkfmTaskPauseService : IDisposable
                 }
             }
 
+            var canContinue = AppDomain.CurrentDomain.GetData("TKFMaa.DailyCompletion.CanContinue") as Func<MaaProcessor, bool>;
+            var available = new Dictionary<MaaProcessor, bool>();
             foreach (var button in buttons.ToArray())
             {
-                if (!(button.Tag is PauseState state) || !states.ContainsKey(state.Processor)) continue;
-                UpdateButton(button, state);
+                if (button.Tag is not PauseState state || !states.ContainsKey(state.Processor) || !button.IsAttachedToVisualTree())
+                {
+                    if (button.Parent is Panel parent) parent.Children.Remove(button);
+                    buttons.Remove(button);
+                    continue;
+                }
+                if (button.Name != ContinueButtonName)
+                {
+                    UpdateButton(button, state);
+                    continue;
+                }
+                if (!available.TryGetValue(state.Processor, out bool show))
+                {
+                    show = canContinue?.Invoke(state.Processor) == true;
+                    available.Add(state.Processor, show);
+                }
+                button.IsVisible = button.IsEnabled = show;
             }
 
             foreach (var button in stopButtons.Keys.Where(button => !button.IsAttachedToVisualTree()).ToArray())
@@ -127,8 +145,9 @@ internal sealed class TkfmTaskPauseService : IDisposable
             var toggle = view.FindControl<Border>(borderName);
             if (toggle == null) continue;
             var parent = EnsureHorizontalParent(toggle);
-            if (parent != null)
-                EnsureButton(parent, parent.Children.IndexOf(toggle), state, 30);
+            if (parent == null) continue;
+            EnsureButton(parent, parent.Children.IndexOf(toggle), state, 30);
+            EnsureContinueButton(parent, parent.Children.IndexOf(toggle), state, 30);
         }
 
         foreach (var toggle in view.GetVisualDescendants().OfType<Button>()
@@ -136,8 +155,8 @@ internal sealed class TkfmTaskPauseService : IDisposable
         {
             AttachStopRelease(toggle, state);
             if (!(toggle.Parent is StackPanel parent)) continue;
-            int index = parent.Children.IndexOf(toggle);
-            EnsureButton(parent, index, state, 28);
+            EnsureButton(parent, parent.Children.IndexOf(toggle), state, 28);
+            EnsureContinueButton(parent, parent.Children.IndexOf(toggle), state, 28);
         }
     }
 
@@ -198,6 +217,39 @@ internal sealed class TkfmTaskPauseService : IDisposable
         parent.Children.Insert(Math.Max(0, Math.Min(index, parent.Children.Count)), button);
         buttons.Add(button);
         UpdateButton(button, state);
+    }
+
+    private void EnsureContinueButton(StackPanel parent, int index, PauseState state, double height)
+    {
+        var existing = parent.Children.OfType<Button>().FirstOrDefault(button => button.Name == ContinueButtonName);
+        if (existing != null)
+        {
+            existing.Tag = state;
+            return;
+        }
+        var button = new Button
+        {
+            Name = ContinueButtonName,
+            Content = "继续任务",
+            Tag = state,
+            IsVisible = false,
+            IsEnabled = false,
+            Height = height,
+            Padding = new Thickness(9, 0),
+            Margin = new Thickness(0, 0, 5, 0),
+            FontSize = 12,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTip.SetTip(button, "按列表顺序执行今天尚未完成的已勾选任务。");
+        button.Click += (_, __) =>
+        {
+            if (disposed || button.Tag is not PauseState current) return;
+            var run = AppDomain.CurrentDomain.GetData("TKFMaa.DailyCompletion.Continue") as Action<MaaProcessor>;
+            run?.Invoke(current.Processor);
+        };
+        parent.Children.Insert(index, button);
+        buttons.Add(button);
     }
 
     private static void Toggle(PauseState state)
