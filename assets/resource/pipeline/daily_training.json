@@ -540,6 +540,11 @@
             }
         }
     },
+    "DailyTrainingConfigPreferTierThree": {
+        "attach": {
+            "prefer_tier_three": false
+        }
+    },
     "DailyTrainingConfigAllowRare": {
         "enabled": false
     },

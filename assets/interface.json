@@ -119,7 +119,8 @@
             "entry": "DailyTrainingStart",
             "option": [
                 "调教目标",
-                "调教道具范围"
+                "调教道具范围",
+                "优先使用三级道具"
             ],
             "doc": [
                 "按设置的目标使用已有点数和道具。助手会先计算还能用几个道具，避免因进度溢出浪费材料。点数或安全可用的道具不足时会停止。桃子和高价值道具会保留。"
@@ -814,6 +815,32 @@
                             "on_error": [
                                 "DailyTrainingReturnRoomListFromDetailFallback"
                             ]
+                        }
+                    }
+                }
+            ]
+        },
+        "优先使用三级道具": {
+            "type": "switch",
+            "default_case": "No",
+            "cases": [
+                {
+                    "name": "Yes",
+                    "pipeline_override": {
+                        "DailyTrainingConfigPreferTierThree": {
+                            "attach": {
+                                "prefer_tier_three": true
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "No",
+                    "pipeline_override": {
+                        "DailyTrainingConfigPreferTierThree": {
+                            "attach": {
+                                "prefer_tier_three": false
+                            }
                         }
                     }
                 }

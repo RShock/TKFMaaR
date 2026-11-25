@@ -24,6 +24,7 @@ SCENE_POINT = (75, 450)  # Observed input outside the purchase/energy modal.
 MAX_BATCH = 10
 INPUT_INTERVAL = 0.12
 RESPONSE_TIMEOUT = 5.0
+TIER_VALUES = {3: (500, 600), 2: (200, 240)}
 
 
 @dataclass
@@ -38,6 +39,9 @@ class TrainingSession:
     room: int = 3
     capacity: tuple[int, int] | None = None
     empty_tabs: set[str] = field(default_factory=set)
+    item_tier: int | None = None
+    tier_has_stock_that_would_overflow: bool = False
+    item_read_failures: int = 0
     selection: tuple | None = None
     selection_tries: int = 0
     zero_batches: int = 0
@@ -305,31 +309,63 @@ def _step(context, image, session):
             f"{session.stop}；当前剩余调教点{snapshot['energy']}，房间进度{snapshot['progress'] / 100:.2f}%。",
         )
         return
-    bounds = _capacity(snapshot, session.capacity)
-    if bounds is None:
-        session.stop = "无法用实际加成和百分比约束房间上限，停止消耗"
-        _log(session, session.stop)
-        return
-    session.capacity = bounds
-    remaining = _safe_remaining(snapshot["progress"], bounds)
     preferred = next((name for name in session.tabs if name not in session.empty_tabs), None)
     if preferred is None:
-        session.stop = "允许的两栏均无可明确使用且不会溢出的道具"
-        _log(session, session.stop)
+        if session.item_tier == 3 and not session.tier_has_stock_that_would_overflow:
+            session.item_tier = 2
+            session.empty_tabs.clear()
+            _log(session, "两栏三级道具已用完，改用200／240分的二级道具。")
+        else:
+            session.stop = (
+                "三级道具仍有库存，剩余进度无法安全容纳，停止调教"
+                if session.item_tier == 3 else "允许的两栏均无可明确使用且不会溢出的道具"
+            )
+            _log(session, session.stop)
         return
+
+    items = [item for item in snapshot["items"] if not item["forbidden"]]
+    tier_values = TIER_VALUES.get(session.item_tier)
+    if tier_values is not None and tab == preferred:
+        uncertain = any(
+            (item["value"] in tier_values and item["count"] is None)
+            or (item["value"] is None and item["count"] != 0
+                and (item["count"] is not None or item["percent"] is not None))
+            for item in items
+        )
+        if uncertain:
+            session.item_read_failures += 1
+            if session.item_read_failures >= 6:
+                session.stop = f"无法确认{session.item_tier}级道具的分数或库存，停止调教"
+                _log(session, session.stop)
+            return
+        session.item_read_failures = 0
+    stocked = [
+        item for item in items
+        if item["value"] and item["count"] is not None and item["count"] > 0
+        and (tier_values is None or item["value"] in tier_values)
+    ]
+    bounds = session.capacity
+    if tier_values is None or (tab == preferred and stocked):
+        bounds = _capacity(snapshot, bounds)
+        if bounds is None:
+            session.stop = "无法用实际加成和百分比约束房间上限，停止消耗"
+            _log(session, session.stop)
+            return
+        session.capacity = bounds
     if tab != preferred:
         result = _find(context, image, "CommonTab" if preferred == "common" else "EventTab")
         if result:
             _click(context, _center(result.box))
         return
-    eligible = [
-        item for item in snapshot["items"]
-        if not item["forbidden"] and item["value"] and item["count"] is not None
-        and item["count"] > 0 and item["value"] <= remaining
-    ]
+    remaining = _safe_remaining(snapshot["progress"], bounds) if bounds is not None else 0
+    eligible = [item for item in stocked if item["value"] <= remaining]
     if not eligible:
         session.empty_tabs.add(tab)
-        _log(session, f"{'通用' if tab == 'common' else '活动'}栏无安全可用道具；未知库存不放行，尝试备用栏。")
+        if session.item_tier == 3 and stocked:
+            session.tier_has_stock_that_would_overflow = True
+        tab_label = "通用" if tab == "common" else "活动"
+        tier_label = f"{session.item_tier}级" if session.item_tier is not None else ""
+        _log(session, f"{tab_label}栏无安全可用的{tier_label}道具，尝试备用栏。")
         return
     item = min(eligible, key=lambda data: (data["value"], data["index"]))
     selected = [data["index"] for data in snapshot["items"] if data["selected"]]
@@ -405,16 +441,20 @@ class DailyTrainingInitialize(CustomAction):
             scope = context.get_node_data("DailyTrainingConfigItemScope") or {}
             expected = scope.get("recognition", {}).get("param", {}).get("expected", [])
             common_first = bool(expected and expected[0] == "优先通用道具")
+            preference = context.get_node_data("DailyTrainingConfigPreferTierThree") or {}
+            prefer_tier_three = preference.get("attach", {}).get("prefer_tier_three") is True
             session = TrainingSession(
                 mode="all" if all_points else "count", limit=limit,
                 tabs=("common", "event") if common_first else ("event", "common"),
+                item_tier=3 if prefer_tier_three else None,
             )
             _SESSIONS[context.tasker.controller.uuid] = session
             goal = "全部点数（按首次读取的现有点数确定额度）" if all_points else f"指定{limit}次"
             _log(
                 session,
                 f"本轮目标：{goal}；只处理当前房间。按画面计算安全连点批次，核对实际消耗后补漏点；"
-                "禁用桃子与高价值道具，禁止购买及补充能量。",
+                "禁用桃子与高价值道具，禁止购买及补充能量。"
+                + ("优先使用500／600分三级道具，耗尽后改用200／240分二级道具。" if prefer_tier_three else ""),
             )
             return True
         except Exception as error:
